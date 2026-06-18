@@ -1,0 +1,1288 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="Fourdle">
+<meta name="theme-color" content="#ffffff" id="theme-meta">
+<title>Fourdle</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --correct:       #6aaa64;
+    --present:       #c9b458;
+    --absent:        #787c7e;
+    --correct-dark:  #538d4e;
+    --present-dark:  #b59f3b;
+    --absent-dark:   #3a3a3c;
+    --tone1:  #1a1a1b;
+    --tone2:  #787c7e;
+    --tone3:  #878a8c;
+    --tone4:  #d3d6da;
+    --tone5:  #edeff1;
+    --bg:     #ffffff;
+    --border: #d3d6da;
+    --key-bg: #d3d6da;
+    --key-fg: #1a1a1b;
+    --tile-empty-border: #d3d6da;
+    --tile-filled-border: #878a8c;
+    --tile-fg: #1a1a1b;
+    --toast-bg: #1a1a1b;
+    --toast-fg: #ffffff;
+    --modal-bg: #ffffff;
+  }
+
+  [data-theme="dark"] {
+    --correct:  #538d4e;
+    --present:  #b59f3b;
+    --absent:   #3a3a3c;
+    --tone1:  #d7dadc;
+    --tone2:  #818384;
+    --tone3:  #565758;
+    --tone4:  #3a3a3c;
+    --tone5:  #272729;
+    --bg:     #121213;
+    --border: #3a3a3c;
+    --key-bg: #818384;
+    --key-fg: #ffffff;
+    --tile-empty-border: #3a3a3c;
+    --tile-filled-border: #565758;
+    --tile-fg: #ffffff;
+    --toast-bg: #d7dadc;
+    --toast-fg: #1a1a1b;
+    --modal-bg: #121213;
+  }
+
+  html {
+    height: 100%;
+    /* prevent scroll bounce on iOS */
+    overflow: hidden;
+    position: fixed;
+    width: 100%;
+  }
+
+  body {
+    height: 100%;
+    width: 100%;
+    overflow: hidden;
+    background: var(--bg);
+    color: var(--tone1);
+    font-family: 'Clear Sans', 'Helvetica Neue', Arial, sans-serif;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    /* safe areas for notched phones */
+    padding-top: env(safe-area-inset-top);
+    padding-bottom: env(safe-area-inset-bottom);
+    transition: background 0.2s;
+    -webkit-tap-highlight-color: transparent;
+    touch-action: manipulation;
+  }
+
+  /* ── HEADER ── */
+  header {
+    width: 100%;
+    max-width: 500px;
+    height: 50px;
+    flex-shrink: 0;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    border-bottom: 1px solid var(--border);
+    padding: 0 8px;
+  }
+
+  .hdr-side {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    width: 96px;
+  }
+  .hdr-side.right { justify-content: flex-end; }
+
+  header h1 {
+    font-size: 1.5rem;
+    font-weight: 700;
+    letter-spacing: 0.12rem;
+    text-transform: uppercase;
+    color: var(--tone1);
+    text-align: center;
+    flex: 1;
+    /* prevent text selection on double-tap */
+    user-select: none;
+  }
+
+  .icon-btn {
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 6px;
+    color: var(--tone1);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 4px;
+    min-width: 40px;
+    min-height: 40px; /* 44px tap target */
+  }
+  .icon-btn svg { width: 22px; height: 22px; fill: var(--tone1); }
+
+  /* ── TOASTS ── */
+  #toasts {
+    position: fixed;
+    top: 58px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    z-index: 1000;
+    pointer-events: none;
+    width: 100%;
+  }
+
+  .toast {
+    background: var(--toast-bg);
+    color: var(--toast-fg);
+    padding: 10px 20px;
+    border-radius: 4px;
+    font-size: 0.875rem;
+    font-weight: 700;
+    white-space: nowrap;
+    animation: toastAnim var(--dur, 1.6s) ease forwards;
+  }
+
+  @keyframes toastAnim {
+    0%   { opacity: 0; transform: translateY(-6px); }
+    12%  { opacity: 1; transform: translateY(0); }
+    70%  { opacity: 1; }
+    100% { opacity: 0; }
+  }
+
+  /* ── BOARD ── */
+  #board-wrap {
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    max-width: 500px;
+    overflow: hidden;
+    padding: 4px 0;
+  }
+
+  #board {
+    display: grid;
+    grid-template-rows: repeat(6, 1fr);
+    gap: 5px;
+    /* Tile size = smallest of width-based, height-based, and hard cap.
+       dvh excludes mobile browser chrome so nothing overlaps. */
+    --tile: min(
+      calc((100vw - 40px) / 4),
+      calc((100dvh - 50px - 175px - 33px) / 6),
+      68px
+    );
+    width: calc(var(--tile) * 4 + 5px * 3);
+    height: calc(var(--tile) * 6 + 5px * 5);
+  }
+
+  .row {
+    display: grid;
+    grid-template-columns: repeat(4, var(--tile));
+    gap: 5px;
+  }
+
+  .tile {
+    width: var(--tile);
+    height: var(--tile);
+    border: 2px solid var(--tile-empty-border);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: clamp(1.4rem, 7vw, 2rem);
+    font-weight: 700;
+    text-transform: uppercase;
+    color: var(--tile-fg);
+    user-select: none;
+    transition: border-color 0.05s;
+    /* GPU-composited for flip */
+    transform-style: preserve-3d;
+    will-change: transform;
+  }
+
+  .tile[data-state="tbd"] {
+    border-color: var(--tile-filled-border);
+    animation: tilePop 0.1s ease;
+  }
+
+  .tile[data-state="correct"],
+  .tile[data-state="present"],
+  .tile[data-state="absent"] {
+    color: #fff;
+    border: none;
+  }
+  .tile[data-state="correct"] { background: var(--correct); }
+  .tile[data-state="present"] { background: var(--present); }
+  .tile[data-state="absent"]  { background: var(--absent);  }
+
+  @keyframes tilePop {
+    0%   { transform: scale(1); }
+    50%  { transform: scale(1.1); }
+    100% { transform: scale(1); }
+  }
+
+  .tile.flip-in  { animation: flipIn  0.25s ease forwards; }
+  .tile.flip-out { animation: flipOut 0.25s ease forwards; }
+  @keyframes flipIn  { to   { transform: rotateX(-90deg); } }
+  @keyframes flipOut { from { transform: rotateX(-90deg); } to { transform: rotateX(0deg); } }
+
+  .row.shake { animation: rowShake 0.5s ease; }
+  @keyframes rowShake {
+    0%,100% { transform: translateX(0); }
+    15%,45%,75% { transform: translateX(-4px); }
+    30%,60%,90% { transform: translateX(4px); }
+  }
+
+  .tile.bounce { animation: tileBounce 0.6s ease; }
+  @keyframes tileBounce {
+    0%,100% { transform: translateY(0); }
+    35% { transform: translateY(-18px); }
+    65% { transform: translateY(-8px); }
+  }
+
+  /* ── KEYBOARD ── */
+  #keyboard {
+    width: 100%;
+    max-width: 500px;
+    padding: 0 6px 8px;
+    flex-shrink: 0;
+  }
+
+  .kb-row {
+    display: flex;
+    justify-content: center;
+    gap: 5px;
+    margin-bottom: 5px;
+  }
+
+  .key {
+    /* 44px min height for accessibility, taller on desktop */
+    height: clamp(40px, 10vw, 58px);
+    min-width: 0;
+    flex: 1;
+    max-width: clamp(36px, 9vw, 43px);
+    border-radius: 4px;
+    border: none;
+    background: var(--key-bg);
+    color: var(--key-fg);
+    font-family: inherit;
+    font-size: clamp(0.7rem, 3.2vw, 0.8125rem);
+    font-weight: 700;
+    text-transform: uppercase;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    user-select: none;
+    transition: background 0.15s, color 0.15s;
+    /* prevent double-tap zoom */
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .key.wide {
+    max-width: clamp(48px, 13vw, 65px);
+    font-size: clamp(0.6rem, 2.6vw, 0.75rem);
+  }
+
+  .key:active { filter: brightness(0.82); transform: scale(0.97); }
+
+  .key[data-state="correct"] { background: var(--correct); color: #fff; }
+  .key[data-state="present"] { background: var(--present); color: #fff; }
+  .key[data-state="absent"]  { background: var(--absent);  color: #fff; }
+
+  /* ── OVERLAY BASE ── */
+  .overlay {
+    display: none;
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,0.5);
+    z-index: 500;
+    align-items: flex-start;
+    justify-content: center;
+    padding: 56px 16px 16px;
+    overflow-y: auto;
+  }
+  .overlay.open { display: flex; }
+
+  .modal-box {
+    background: var(--modal-bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    width: 100%;
+    max-width: 420px;
+    padding: 24px 20px;
+    position: relative;
+  }
+
+  .modal-title {
+    text-align: center;
+    font-size: 0.8125rem;
+    font-weight: 700;
+    letter-spacing: 0.15em;
+    text-transform: uppercase;
+    padding-bottom: 12px;
+    margin-bottom: 16px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .modal-close {
+    position: absolute;
+    top: 10px; right: 10px;
+    background: none; border: none; cursor: pointer;
+    color: var(--tone1);
+    font-size: 1.2rem;
+    padding: 6px 10px;
+    min-width: 40px; min-height: 40px;
+    display: flex; align-items: center; justify-content: center;
+    border-radius: 4px;
+  }
+
+  /* How to play */
+  #help-modal p { font-size: 0.875rem; line-height: 1.6; margin-bottom: 10px; }
+  #help-modal strong { font-weight: 700; }
+  .eg-row { display: flex; gap: 4px; margin: 8px 0 12px; }
+  .eg-tile {
+    width: 38px; height: 38px;
+    border: 2px solid var(--tile-empty-border);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 1.2rem; font-weight: 700; text-transform: uppercase;
+    color: var(--tone1);
+  }
+  .eg-tile.c { background: var(--correct); color: #fff; border: none; }
+  .eg-tile.p { background: var(--present); color: #fff; border: none; }
+  .eg-tile.a { background: var(--absent);  color: #fff; border: none; }
+  .divider { border: none; border-top: 1px solid var(--border); margin: 12px 0; }
+
+  /* Share modal */
+  #share-modal { text-align: center; }
+  #share-result { font-size: 1.1rem; font-weight: 700; margin-bottom: 4px; }
+  #share-sub    { font-size: 0.8rem; color: var(--tone2); margin-bottom: 18px; }
+  #share-grid   { font-size: 1.6rem; line-height: 1.6; margin-bottom: 22px; letter-spacing: 2px; }
+
+  #share-copy-btn {
+    width: 100%;
+    padding: 14px;
+    background: var(--correct);
+    color: #fff;
+    border: none;
+    border-radius: 4px;
+    font-family: inherit;
+    font-size: 0.875rem;
+    font-weight: 700;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    cursor: pointer;
+    transition: filter 0.15s;
+    min-height: 48px;
+  }
+  #share-copy-btn:active { filter: brightness(0.88); }
+  #share-copied-msg {
+    height: 20px;
+    margin-top: 10px;
+    font-size: 0.78rem;
+    color: var(--tone2);
+    opacity: 0;
+    transition: opacity 0.3s;
+  }
+
+  /* countdown in share modal */
+  #share-countdown {
+    font-size: 0.78rem;
+    color: var(--tone2);
+    margin-top: 16px;
+  }
+  #share-countdown span {
+    font-weight: 700;
+    color: var(--tone1);
+  }
+
+  /* Stats row */
+  .stats-row {
+    display: flex;
+    justify-content: center;
+    gap: 16px;
+    margin-bottom: 20px;
+  }
+  .stat-box { text-align: center; }
+  .stat-num { font-size: 1.8rem; font-weight: 700; line-height: 1; }
+  .stat-label { font-size: 0.65rem; color: var(--tone2); margin-top: 3px; text-transform: uppercase; letter-spacing: 0.05em; }
+
+  .dist-section { margin-bottom: 18px; }
+  .dist-title { font-size: 0.75rem; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; text-align: center; margin-bottom: 10px; color: var(--tone1); }
+  .dist-row { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; font-size: 0.8rem; }
+  .dist-num { width: 12px; text-align: right; font-weight: 700; flex-shrink: 0; }
+  .dist-bar-wrap { flex: 1; }
+  .dist-bar {
+    height: 20px;
+    min-width: 20px;
+    background: var(--absent);
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    padding-right: 6px;
+    font-size: 0.75rem;
+    font-weight: 700;
+    color: #fff;
+    border-radius: 2px;
+    transition: width 0.4s ease;
+  }
+  .dist-bar.highlight { background: var(--correct); }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="hdr-side">
+    <button class="icon-btn" id="help-btn" aria-label="How to play">
+      <svg viewBox="0 0 24 24"><path d="M11 18h2v-2h-2v2zm1-16C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm0 18c-4.41 0-8-3.59-8-8s3.59-8 8-8 8 3.59 8 8-3.59 8-8 8zm0-14c-2.21 0-4 1.79-4 4h2c0-1.1.9-2 2-2s2 .9 2 2c0 2-3 1.75-3 5h2c0-2.25 3-2.5 3-5 0-2.21-1.79-4-4-4z"/></svg>
+    </button>
+    <button class="icon-btn" id="stats-btn" aria-label="Statistics">
+      <svg viewBox="0 0 24 24"><path d="M5 9h2v11H5V9zm4-5h2v16H9V4zm4 8h2v8h-2v-8zm4-4h2v12h-2V8z"/></svg>
+    </button>
+  </div>
+  <h1>Fourdle</h1>
+  <div class="hdr-side right">
+    <button class="icon-btn" id="theme-btn" aria-label="Toggle dark mode">
+      <svg id="theme-icon" viewBox="0 0 24 24"><path d="M12 3c-4.97 0-9 4.03-9 9s4.03 9 9 9 9-4.03 9-9c0-.46-.04-.92-.1-1.36-.98 1.37-2.58 2.26-4.4 2.26-2.98 0-5.4-2.42-5.4-5.4 0-1.81.89-3.42 2.26-4.4-.44-.06-.9-.1-1.36-.1z"/></svg>
+    </button>
+  </div>
+</header>
+
+<div id="toasts"></div>
+
+<div id="board-wrap">
+  <div id="board"></div>
+</div>
+
+<div id="keyboard"></div>
+
+<!-- HOW TO PLAY -->
+<div class="overlay" id="help-overlay">
+  <div class="modal-box" id="help-modal">
+    <button class="modal-close" onclick="closeOverlay('help-overlay')">&#x2715;</button>
+    <div class="modal-title">How to play</div>
+    <p>Guess the <strong>FOURDLE</strong> in 6 tries.</p>
+    <p>Each guess must be a valid 4-letter word. Press <strong>Enter</strong> to submit.</p>
+    <p>Tile colours change after each guess to show how close you were.</p>
+    <hr class="divider">
+    <p><strong>Examples</strong></p>
+    <div class="eg-row">
+      <div class="eg-tile c">F</div><div class="eg-tile">I</div><div class="eg-tile">R</div><div class="eg-tile">E</div>
+    </div>
+    <p><strong>F</strong> is in the word and in the correct spot.</p>
+    <div class="eg-row">
+      <div class="eg-tile">B</div><div class="eg-tile p">O</div><div class="eg-tile">L</div><div class="eg-tile">D</div>
+    </div>
+    <p><strong>O</strong> is in the word but in the wrong spot.</p>
+    <div class="eg-row">
+      <div class="eg-tile">C</div><div class="eg-tile">A</div><div class="eg-tile">L</div><div class="eg-tile a">M</div>
+    </div>
+    <p><strong>M</strong> is not in the word in any spot.</p>
+    <hr class="divider">
+    <p style="text-align:center;font-size:0.8rem;color:var(--tone2)">A new Fourdle every day!</p>
+  </div>
+</div>
+
+<!-- SHARE / RESULTS -->
+<div class="overlay" id="share-overlay">
+  <div class="modal-box" id="share-modal">
+    <button class="modal-close" onclick="closeOverlay('share-overlay')">&#x2715;</button>
+    <div class="modal-title">Results</div>
+    <div id="share-result"></div>
+    <div id="share-sub"></div>
+    <div id="share-grid"></div>
+
+    <!-- Stats -->
+    <div class="stats-row">
+      <div class="stat-box"><div class="stat-num" id="st-played">0</div><div class="stat-label">Played</div></div>
+      <div class="stat-box"><div class="stat-num" id="st-winpct">0</div><div class="stat-label">Win %</div></div>
+      <div class="stat-box"><div class="stat-num" id="st-streak">0</div><div class="stat-label">Streak</div></div>
+      <div class="stat-box"><div class="stat-num" id="st-best">0</div><div class="stat-label">Best</div></div>
+    </div>
+
+    <!-- Guess distribution -->
+    <div class="dist-section">
+      <div class="dist-title">Guess Distribution</div>
+      <div id="dist-bars"></div>
+    </div>
+
+    <button id="share-copy-btn" onclick="copyResult()">&#128279; Share</button>
+    <div id="share-copied-msg">Copied to clipboard!</div>
+    <div id="share-countdown">Next Fourdle in <span id="countdown-time">--:--:--</span></div>
+  </div>
+</div>
+
+<script>
+const WORDS = [
+  "aahs","aals","abas","abba","abbe","abed","abet","able","ably","abos","abri","abut","abye","abys","aced",
+  "aces","ache","achy","acid","acme","acne","acre","acta","acts","acyl","adds","adit","ados","adze","aeon",
+  "aero","aery","afar","agar","agas","aged","agee","ager","ages","agha","agin","agio","agly","agma","agog",
+  "agon","ague","ahem","ahoy","aide","aids","ails","aims","ains","airn","airs","airt","airy","aits","ajar",
+  "ajee","akee","akin","alae","alan","alar","alas","alba","albs","alec","alee","alef","ales","alfa","alga",
+  "alif","alit","alky","alls","ally","alma","alme","alms","aloe","alow","alps","also","alto","alts","alum",
+  "amah","amas","ambo","amen","amia","amid","amie","amin","amir","amis","ammo","amok","amps","amus","amyl",
+  "anal","anas","ands","anes","anew","anga","anil","anis","ankh","anna","anoa","anon","ansa","anta","ante",
+  "anti","ants","anus","aped","aper","apes","apex","apod","apse","aqua","arak","arbs","arch","arco","arcs",
+  "area","ares","arfs","aria","arid","aril","arks","arms","army","arse","arts","arty","arum","arvo","aryl",
+  "asci","asea","ashy","asks","asps","atap","ates","atma","atom","atop","auks","auld","aunt","aura","auto",
+  "aver","aves","avid","avos","avow","away","awed","awee","awes","awls","awns","awny","awol","awry","axal",
+  "axed","axel","axes","axil","axis","axle","axon","ayah","ayes","ayin","azan","azon","baal","baas","baba",
+  "babe","babu","baby","bach","back","bade","bads","baff","bags","baht","bail","bait","bake","bald","bale",
+  "balk","ball","balm","bals","bams","band","bane","bang","bani","bank","bans","baps","barb","bard","bare",
+  "barf","bark","barm","barn","bars","base","bash","bask","bass","bast","bate","bath","bats","batt","baud",
+  "bawd","bawl","bays","bead","beak","beam","bean","bear","beat","beau","beck","beds","bedu","beef","been",
+  "beep","beer","bees","beet","begs","bell","bels","belt","bema","bend","bene","bens","bent","berg","berm",
+  "best","beta","beth","bets","bevy","beys","bhut","bias","bibb","bibs","bice","bide","bids","bier","biff",
+  "bigs","bike","bile","bilk","bill","bima","bind","bine","bins","bint","bios","bird","birk","birl","birr",
+  "bise","bisk","bite","bits","bitt","bize","blab","blae","blah","blam","blat","blaw","bleb","bled","blet",
+  "blew","blin","blip","blob","bloc","blot","blow","blub","blue","blur","boar","boas","boat","bobs","bock",
+  "bode","bods","body","boff","bogs","bogy","boil","bola","bold","bole","boll","bolo","bolt","bomb","bond",
+  "bone","bong","bonk","bony","boob","book","boom","boon","boor","boos","boot","bops","bora","bore","born",
+  "bort","bosh","bosk","boss","bota","both","bots","bott","bout","bowl","bows","boxy","boyo","boys","bozo",
+  "brad","brae","brag","bran","bras","brat","braw","bray","bred","bree","bren","brew","brie","brig","brim",
+  "brin","brio","bris","brit","broo","bros","brow","brrr","brut","bubo","bubs","buck","buds","buff","bugs",
+  "buhl","buhr","bulb","bulk","bull","bumf","bump","bums","bund","bung","bunk","bunn","buns","bunt","buoy",
+  "bura","burd","burg","burl","burn","burp","burr","burs","bury","bush","busk","buss","bust","busy","bute",
+  "buts","butt","buys","buzz","byes","byre","byrl","byte","cabs","caca","cade","cadi","cads","cafe","caff",
+  "cage","cagy","caid","cain","cake","caky","calf","calk","call","calm","calo","calx","came","camp","cams",
+  "cane","cans","cant","cape","caph","capo","caps","carb","card","care","cark","carl","carn","carp","carr",
+  "cars","cart","casa","case","cash","cask","cast","cate","cats","caul","cave","cavy","caws","cays","ceca",
+  "cede","cedi","cees","ceil","cell","cels","celt","cent","cepe","ceps","cere","cero","cess","cete","chad",
+  "cham","chao","chap","char","chat","chaw","chay","chef","chew","chez","chia","chic","chid","chin","chip",
+  "chis","chit","chon","chop","chow","chub","chug","chum","ciao","cine","cion","cire","cist","cite","city",
+  "clad","clag","clam","clan","clap","claw","clay","clef","clew","clip","clod","clog","clon","clop","clot",
+  "cloy","club","clue","coal","coat","coax","cobb","cobs","coca","cock","coco","coda","code","cods","coed",
+  "coff","coft","cogs","coho","coif","coil","coin","coir","coke","cola","cold","cole","cols","colt","coly",
+  "coma","comb","come","comp","cone","coni","conk","conn","cons","cony","coof","cook","cool","coon","coop",
+  "coos","coot","cope","cops","copy","cord","core","corf","cork","corm","corn","cory","cosh","coss","cost",
+  "cosy","cote","cots","coup","cove","cowl","cows","cowy","coxa","coys","cozy","crab","crag","cram","crap",
+  "craw","crew","crib","cris","croc","crop","crow","crud","crus","crux","cube","cubs","cuds","cued","cues",
+  "cuff","cuif","cuke","cull","culm","cult","cunt","cups","curb","curd","cure","curf","curl","curn","curr",
+  "curs","curt","cusk","cusp","cuss","cute","cuts","cwms","cyan","cyma","cyme","cyst","czar","dabs","dace",
+  "dada","dado","dads","daff","daft","dago","dags","dahl","dahs","dais","daks","dale","dals","dame","damn",
+  "damp","dams","dang","dank","daps","darb","dare","dark","darn","dart","dash","data","date","dato","daub",
+  "daut","davy","dawk","dawn","daws","dawt","days","daze","dead","deaf","deal","dean","dear","debs","debt",
+  "deck","deco","deed","deem","deep","deer","dees","deet","defi","deft","defy","deil","deke","dele","delf",
+  "deli","dell","dels","deme","demo","demy","dene","dens","dent","deny","dere","derm","desk","deva","devs",
+  "dews","dewy","dexy","deys","dhak","dhal","dhow","dial","dibs","dice","dick","dido","didy","died","diel",
+  "dies","diet","digs","dike","dill","dime","dims","dine","ding","dink","dins","dint","diol","dips","dipt",
+  "dire","dirk","dirl","dirt","disc","dish","disk","diss","dita","dite","dits","ditz","diva","dive","djin",
+  "doat","doby","dock","docs","dodo","doer","does","doff","doge","dogs","dogy","doit","dojo","dole","doll",
+  "dols","dolt","dome","doms","dona","done","dong","dons","doom","door","dopa","dope","dopy","dore","dork",
+  "dorm","dorp","dorr","dors","dory","dose","doss","dost","dote","doth","dots","doty","doum","dour","doux",
+  "dove","down","dows","doxy","doze","dozy","drab","drag","dram","drat","draw","dray","dree","dreg","drek",
+  "drew","drib","drip","drop","drub","drug","drum","drys","duad","dual","dubs","duce","duci","duck","duct",
+  "dude","duds","duel","dues","duet","duff","dugs","duit","duke","dull","duly","duma","dumb","dump","dune",
+  "dung","dunk","duns","dunt","duos","dupe","dups","dura","dure","durn","duro","durr","dusk","dust","duty",
+  "dyad","dyed","dyer","dyes","dyke","dyne","each","earl","earn","ears","ease","east","easy","eath","eats",
+  "eaux","eave","ebbs","ebon","eche","echo","ecru","ecus","eddo","eddy","edge","edgy","edhs","edit","eels",
+  "eely","eery","effs","efts","egad","egal","eger","eggs","eggy","egis","egos","eide","eked","ekes","elan",
+  "elds","elhi","elks","ells","elms","elmy","else","emes","emeu","emfs","emic","emir","emit","emus","emyd",
+  "ends","engs","enol","enow","envy","eons","epee","epha","epic","epos","eras","ergo","ergs","erne","erns",
+  "eros","errs","erst","eses","espy","etas","etch","eths","etic","etna","etui","euro","even","ever","eves",
+  "evil","ewer","ewes","exam","exec","exes","exit","exon","expo","eyas","eyed","eyen","eyer","eyes","eyne",
+  "eyra","eyre","eyry","face","fact","fade","fado","fads","fags","fail","fain","fair","fake","fall","falx",
+  "fame","fane","fang","fano","fans","fard","fare","farl","farm","faro","fart","fash","fast","fate","fats",
+  "faun","faux","fava","fave","fawn","fays","faze","feal","fear","feat","feck","feds","feed","feel","fees",
+  "feet","fehs","fell","felt","feme","fems","fend","fens","feod","fere","fern","fess","feta","fete","fets",
+  "feud","feus","fiar","fiat","fibs","fice","fico","fido","fids","fief","fife","figs","fila","file","fill",
+  "film","filo","fils","find","fine","fink","fino","fins","fire","firm","firn","firs","fisc","fish","fist",
+  "fits","five","fixt","fizz","flab","flag","flak","flam","flan","flap","flat","flaw","flax","flay","flea",
+  "fled","flee","flew","flex","fley","flic","flip","flit","floc","floe","flog","flop","flow","flub","flue",
+  "flus","flux","foal","foam","fobs","foci","foes","fogs","fogy","fohn","foil","foin","fold","folk","fond",
+  "fons","font","food","fool","foot","fops","fora","forb","ford","fore","fork","form","fort","foss","foul",
+  "four","fowl","foxy","foys","fozy","frae","frag","frap","frat","fray","free","fret","frig","frit","friz",
+  "froe","frog","from","frow","frug","fubs","fuci","fuck","fuds","fuel","fugs","fugu","fuji","full","fume",
+  "fumy","fund","funk","funs","furl","furs","fury","fuse","fuss","futz","fuze","fuzz","fyce","fyke","gabs",
+  "gaby","gadi","gads","gaed","gaen","gaes","gaff","gaga","gage","gags","gain","gait","gala","gale","gall",
+  "gals","gama","gamb","game","gamp","gams","gamy","gane","gang","gaol","gape","gaps","gapy","garb","gars",
+  "gash","gasp","gast","gate","gats","gaud","gaum","gaun","gaur","gave","gawk","gawp","gays","gaze","gear",
+  "geck","geds","geed","geek","gees","geez","geld","gels","gelt","gems","gene","gens","gent","genu","germ",
+  "gest","geta","gets","geum","ghat","ghee","ghis","gibe","gibs","gids","gied","gien","gies","gift","giga",
+  "gigs","gild","gill","gilt","gimp","gink","gins","gips","gird","girl","girn","giro","girt","gist","gits",
+  "give","glad","gled","glee","gleg","glen","gley","glia","glib","glim","glob","glom","glop","glow","glue",
+  "glug","glum","glut","gnar","gnat","gnaw","gnus","goad","goal","goas","goat","gobo","gobs","goby","gods",
+  "goer","goes","gogo","gold","golf","gone","gong","good","goof","gook","goon","goop","goos","gore","gorp",
+  "gory","gosh","gout","gowd","gowk","gown","goys","grab","grad","gram","gran","grat","gray","gree","grew",
+  "grey","grid","grig","grim","grin","grip","grit","grog","grot","grow","grub","grue","grum","guan","guar",
+  "guck","gude","guff","guid","gulf","gull","gulp","guls","gums","gunk","guns","guru","gush","gust","guts",
+  "guvs","guys","gybe","gyms","gyps","gyre","gyri","gyro","gyve","haaf","haar","habu","hack","hade","hadj",
+  "haed","haem","haen","haes","haet","haft","hags","haha","hahs","haik","hail","hair","haji","hajj","hake",
+  "hale","half","hall","halm","halo","halt","hame","hams","hand","hang","hank","hant","haps","hard","hare",
+  "hark","harl","harm","harp","hart","hash","hasp","hast","hate","hath","hats","haul","haut","have","hawk",
+  "haws","hays","haze","hazy","head","heal","heap","hear","heat","hebe","heck","heed","heel","heft","hehs",
+  "heil","heir","held","hell","helm","helo","help","heme","hemp","hems","hens","hent","herb","herd","here",
+  "herl","herm","hern","hero","hers","hest","heth","hets","hewn","hews","hick","hide","hied","hies","high",
+  "hike","hila","hili","hill","hilt","hind","hins","hint","hips","hire","hisn","hiss","hist","hits","hive",
+  "hoar","hoax","hobo","hobs","hock","hods","hoed","hoer","hoes","hogg","hogs","hoke","hold","hole","holk",
+  "holm","holp","hols","holt","holy","home","homo","homy","hone","hong","honk","hons","hood","hoof","hook",
+  "hoop","hoot","hope","hops","hora","horn","hose","host","hots","hour","hove","howe","howf","howk","howl",
+  "hows","hoya","hoys","hubs","huck","hued","hues","huff","huge","hugs","huic","hula","hulk","hull","hump",
+  "hums","hung","hunh","hunk","huns","hunt","hurl","hurt","hush","husk","huts","hwan","hyla","hymn","hype",
+  "hypo","hyps","hyte","iamb","ibex","ibis","iced","ices","ichs","icky","icon","idea","idem","ides","idle",
+  "idly","idol","idyl","iffy","iglu","ikat","ikon","ilea","ilex","ilia","ilka","ilks","ills","illy","imam",
+  "imid","immy","impi","imps","inby","inch","info","inia","inks","inky","inly","inns","inro","inti","into",
+  "ions","iota","ired","ires","irid","iris","irks","iron","isba","isle","isms","itch","item","iwis","ixia",
+  "izar","jabs","jack","jade","jagg","jags","jail","jake","jamb","jams","jane","jape","jarl","jars","jato",
+  "jauk","jaup","java","jaws","jays","jazz","jean","jeed","jeep","jeer","jees","jeez","jefe","jehu","jell",
+  "jeon","jerk","jess","jest","jete","jets","jeux","jews","jiao","jibb","jibe","jibs","jiff","jigs","jill",
+  "jilt","jimp","jink","jinn","jins","jinx","jism","jive","jobs","jock","joes","joey","jogs","john","join",
+  "joke","joky","jole","jolt","josh","joss","jota","jots","jouk","jowl","jows","joys","juba","jube","judo",
+  "juga","jugs","juju","juke","jump","junk","jupe","jura","jury","just","jute","juts","kaas","kabs","kadi",
+  "kaes","kafs","kagu","kaif","kail","kain","kaka","kaki","kale","kame","kami","kana","kane","kaon","kapa",
+  "kaph","karn","kart","kata","kats","kava","kayo","kays","kbar","keas","keck","keef","keek","keel","keen",
+  "keep","keet","kefs","kegs","keir","kelp","kemp","keno","kens","kent","kepi","keps","kept","kerb","kerf",
+  "kern","keto","keys","khaf","khan","khat","khet","khis","kibe","kick","kids","kief","kier","kifs","kike",
+  "kill","kiln","kilo","kilt","kina","kind","kine","king","kink","kino","kins","kips","kirk","kirn","kirs",
+  "kiss","kist","kite","kith","kits","kiva","kiwi","knap","knar","knee","knew","knit","knob","knop","knot",
+  "know","knur","koan","koas","kobo","kobs","koel","kohl","kola","kolo","konk","kook","koph","kops","kore",
+  "kors","koss","koto","kris","kudo","kudu","kues","kuru","kvas","kyak","kyar","kyat","kyte","labs","lace",
+  "lack","lacs","lacy","lade","lads","lady","lags","laic","laid","lain","lair","lake","lakh","laky","lall",
+  "lama","lamb","lame","lamp","lams","land","lane","lang","lank","laps","lard","lari","lark","lars","lase",
+  "lash","lass","last","late","lath","lati","lats","laud","lava","lave","lavs","lawn","laws","lays","laze",
+  "lazy","lead","leaf","leak","leal","lean","leap","lear","leas","lech","leek","leer","lees","leet","left",
+  "legs","lehr","leis","leke","leks","leku","lend","leno","lens","lent","lept","less","lest","lets","leud",
+  "leva","levo","levy","lewd","leys","liar","libs","lice","lich","lick","lido","lids","lied","lief","lien",
+  "lier","lies","lieu","life","lift","like","lilt","lily","lima","limb","lime","limn","limo","limp","limy",
+  "line","ling","link","linn","lino","lins","lint","liny","lion","lips","lira","lire","liri","lisp","list",
+  "lite","lits","litu","live","load","loaf","loam","loan","lobe","lobo","lobs","loca","loch","loci","lock",
+  "loco","lode","loft","loge","logo","logs","logy","loin","loll","lone","long","loof","look","loom","loon",
+  "loop","loos","loot","lope","lops","lord","lore","lorn","lory","lose","loss","lost","lota","loth","loti",
+  "lots","loud","loup","lour","lout","love","lowe","lown","lows","luau","lube","luce","luck","lude","lues",
+  "luff","luge","lugs","lull","lulu","lump","lums","luna","lune","lung","lunk","lunt","luny","lure","lurk",
+  "lush","lust","lute","lutz","luvs","luxe","lwei","lyes","lynx","lyre","lyse","maar","mabe","mace","mach",
+  "mack","macs","made","mads","maes","mage","magi","mags","maid","mail","maim","main","mair","make","mako",
+  "male","mall","malm","malt","mama","mana","mane","mano","mans","many","maps","marc","mare","mark","marl",
+  "mars","mart","mash","mask","mass","mast","mate","math","mats","matt","maud","maul","maun","maut","mawn",
+  "maws","maxi","maya","mayo","mays","maze","mazy","mead","meal","mean","meat","meed","meek","meet","meld",
+  "mell","mels","melt","memo","mems","mend","meno","menu","meou","meow","mere","merk","merl","mesa","mesh",
+  "mess","meta","mete","meth","mewl","mews","meze","mhos","mibs","mica","mice","mick","midi","mids","mien",
+  "miff","migg","migs","mike","mild","mile","milk","mill","milo","mils","milt","mime","mina","mind","mine",
+  "mini","mink","mint","minx","mire","miri","mirk","mirs","miry","mise","miso","miss","mist","mite","mitt",
+  "mity","mixt","moan","moas","moat","mobs","mock","mocs","mode","modi","mods","mogs","moil","mojo","moke",
+  "mola","mold","mole","moll","mols","molt","moly","mome","momi","moms","monk","mono","mons","mony","mood",
+  "mool","moon","moor","moos","moot","mope","mops","mopy","mora","more","morn","mors","mort","mosk","moss",
+  "most","mote","moth","mots","mott","moue","move","mown","mows","moxa","mozo","much","muck","muds","muff",
+  "mugg","mugs","mule","mull","mumm","mump","mums","mumu","muni","muns","muon","mura","mure","murk","murr",
+  "muse","mush","musk","muss","must","mute","muts","mutt","myna","myth","naan","nabe","nabs","nada","nags",
+  "naif","nail","name","nana","nans","naoi","naos","nape","naps","narc","nard","nark","nary","nave","navy",
+  "nays","nazi","neap","near","neat","nebs","neck","need","neem","neep","neif","nema","nene","neon","nerd",
+  "ness","nest","nets","nett","neuk","neum","neve","nevi","news","newt","next","nibs","nice","nick","nide",
+  "nidi","nigh","nill","nils","nims","nine","nipa","nips","nisi","nite","nits","nixe","nixy","nobs","nock",
+  "node","nodi","nods","noel","noes","nogg","nogs","noil","noir","nolo","noma","nome","noms","nona","none",
+  "nook","noon","nope","nori","norm","nose","nosh","nosy","nota","note","noun","nous","nova","nows","nowt",
+  "nubs","nude","nuke","null","numb","nuns","nurd","nurl","nuts","oafs","oaks","oars","oast","oath","oats",
+  "obes","obey","obia","obis","obit","oboe","obol","ocas","odds","odea","odes","odic","odor","odyl","ofay",
+  "offs","ogam","ogee","ogle","ogre","ohed","ohia","ohms","oils","oily","oink","okas","okay","okeh","okes",
+  "okra","olds","oldy","olea","oleo","oles","olio","olla","omen","omer","omit","once","ones","only","onto",
+  "onus","onyx","oohs","oops","oots","ooze","oozy","opah","opal","oped","open","opes","opts","opus","orad",
+  "oral","orbs","orby","orca","orcs","ordo","ores","orgy","orle","orra","orts","oryx","orzo","osar","oses",
+  "ossa","otic","otto","ouch","ouds","ouph","ours","oust","outs","ouzo","oval","oven","over","ovum","owed",
+  "owes","owls","owns","owse","oxen","oxes","oxid","oxim","oyer","oyes","oyez","paca","pace","pack","pacs",
+  "pact","padi","pads","page","paid","paik","pail","pain","pair","pale","pall","palm","palp","pals","paly",
+  "pams","pane","pang","pans","pant","papa","paps","para","pard","pare","park","parr","pars","part","pase",
+  "pash","pass","past","pate","path","pats","paty","pave","pawl","pawn","paws","pays","peag","peak","peal",
+  "pean","pear","peas","peat","pech","peck","pecs","peds","peed","peek","peel","peen","peep","peer","pees",
+  "pegs","pehs","pein","peke","pele","pelf","pelt","pend","pens","pent","peon","pepo","peps","peri","perk",
+  "perm","pert","peso","pest","pets","pews","pfft","pfui","phat","phew","phis","phiz","phon","phot","phut",
+  "pial","pian","pias","pica","pice","pick","pics","pied","pier","pies","pigs","pika","pike","piki","pile",
+  "pili","pill","pily","pima","pimp","pina","pine","ping","pink","pins","pint","piny","pion","pipe","pips",
+  "pipy","pirn","pish","piso","piss","pita","pith","pits","pity","pixy","plan","plat","play","plea","pleb",
+  "pled","plew","plie","plod","plop","plot","plow","ploy","plug","plum","plus","pock","poco","pods","poem",
+  "poet","pogy","pois","poke","poky","pole","poll","polo","pols","poly","pome","pomp","poms","pond","pone",
+  "pong","pons","pony","pood","poof","pooh","pool","poon","poop","poor","pope","pops","pore","pork","porn",
+  "port","pose","posh","post","posy","pots","pouf","pour","pout","pows","pram","prao","prat","prau","pray",
+  "pree","prep","prex","prey","prez","prig","prim","proa","prod","prof","prog","prom","prop","pros","prow",
+  "psis","psst","pubs","puce","puck","puds","puff","pugh","pugs","puja","puke","pula","pule","puli","pull",
+  "pulp","puls","puma","pump","puna","pung","punk","puns","punt","puny","pupa","pups","pure","puri","purl",
+  "purr","purs","push","puss","puts","putt","putz","pyas","pyes","pyic","pyin","pyre","qaid","qats","qoph",
+  "quad","quag","quai","quay","quey","quid","quin","quip","quit","quiz","quod","race","rack","racy","rads",
+  "raff","raft","raga","rage","ragi","rags","raia","raid","rail","rain","raja","rake","raki","rale","rami",
+  "ramp","rams","rand","rang","rani","rank","rant","rape","raps","rapt","rare","rase","rash","rasp","rate",
+  "rath","rato","rats","rave","raws","raya","rays","raze","razz","read","real","ream","reap","rear","rebs",
+  "reck","recs","redd","rede","redo","reds","reed","reef","reek","reel","rees","refs","reft","regs","reif",
+  "rein","reis","rely","rems","rend","rent","repo","repp","reps","resh","rest","rete","rets","revs","rhea",
+  "rhos","rhus","rial","rias","ribs","rice","rich","rick","ride","rids","riel","rife","riff","rifs","rift",
+  "rigs","rile","rill","rime","rims","rimy","rind","ring","rink","rins","riot","ripe","rips","rise","risk",
+  "rite","ritz","rive","road","roam","roan","roar","robe","robs","rock","rocs","rode","rods","roes","roil",
+  "role","rolf","roll","romp","roms","rood","roof","rook","room","root","rope","ropy","rose","rosy","rota",
+  "rote","roti","rotl","roto","rots","roue","roup","rout","roux","rove","rows","rube","rubs","ruby","ruck",
+  "rudd","rude","rued","ruer","rues","ruff","ruga","rugs","ruin","rule","ruly","rump","rums","rune","rung",
+  "runs","runt","ruse","rush","rusk","rust","ruth","ruts","ryas","ryes","ryke","rynd","ryot","sabe","sabs",
+  "sack","sacs","sade","sadi","safe","saga","sage","sago","sags","sagy","said","sail","sain","sake","saki",
+  "sale","sall","salp","sals","salt","same","samp","sand","sane","sang","sank","sans","saps","sard","sari",
+  "sark","sash","sass","sate","sati","saul","save","sawn","saws","says","scab","scad","scag","scam","scan",
+  "scar","scat","scop","scot","scow","scry","scud","scum","scup","scut","seal","seam","sear","seas","seat",
+  "secs","sect","seed","seek","seel","seem","seen","seep","seer","sees","sego","segs","seif","seis","self",
+  "sell","sels","seme","semi","send","sene","sent","sept","sera","sere","serf","sers","seta","sets","sett",
+  "sewn","sews","sext","sexy","shad","shag","shah","sham","shat","shaw","shay","shea","shed","shes","shew",
+  "shim","shin","ship","shit","shiv","shmo","shod","shoe","shog","shoo","shop","shot","show","shri","shul",
+  "shun","shut","sial","sibb","sibs","sice","sick","sics","side","sift","sigh","sign","sike","sild","silk",
+  "sill","silo","silt","sima","simp","sims","sine","sing","sinh","sink","sins","sipe","sips","sire","sirs",
+  "site","sith","sits","size","sizy","skag","skas","skat","skee","skeg","skep","skew","skid","skim","skin",
+  "skip","skis","skit","skua","slab","slag","slam","slap","slat","slaw","slay","sled","slew","slid","slim",
+  "slip","slit","slob","sloe","slog","slop","slot","slow","slub","slue","slug","slum","slur","slut","smew",
+  "smit","smog","smug","smut","snag","snap","snaw","sned","snib","snip","snit","snob","snog","snot","snow",
+  "snub","snug","snye","soak","soap","soar","sobs","sock","soda","sods","sofa","soft","soil","soja","soke",
+  "sola","sold","sole","soli","solo","sols","soma","some","sone","song","sons","sook","soon","soot","soph",
+  "sops","sora","sorb","sord","sore","sori","sorn","sort","soth","sots","souk","soul","soup","sour","sous",
+  "sown","sows","soya","soys","spae","span","spar","spas","spat","spay","spaz","spec","sped","spew","spic",
+  "spik","spin","spit","spiv","spot","spry","spud","spue","spun","spur","sris","stab","stag","star","stat",
+  "staw","stay","stem","step","stet","stew","stey","stir","stoa","stob","stop","stow","stub","stud","stum",
+  "stun","stye","suba","subs","such","suck","sudd","suds","sued","suer","sues","suet","sugh","suit","sulk",
+  "sulu","sumo","sump","sums","sung","sunk","sunn","suns","supe","sups","suqs","sura","surd","sure","surf",
+  "suss","swab","swag","swam","swan","swap","swat","sway","swig","swim","swob","swop","swot","swum","sybo",
+  "syce","syke","syli","sync","syne","syph","tabs","tabu","tace","tach","tack","taco","tact","tads","tael",
+  "tags","tahr","tail","tain","taka","take","tala","talc","tale","tali","talk","tall","tame","tamp","tams",
+  "tang","tank","tans","taos","tapa","tape","taps","tare","tarn","taro","tarp","tars","tart","task","tass",
+  "tate","tats","taus","taut","tavs","taws","taxa","taxi","teak","teal","team","tear","teas","teat","teds",
+  "teed","teel","teem","teen","tees","teff","tegs","tela","tele","tell","tels","temp","tend","tens","tent",
+  "tepa","term","tern","test","teth","tets","tews","text","thae","than","that","thaw","thee","them","then",
+  "thew","they","thin","thio","thir","this","thou","thro","thru","thud","thug","thus","tick","tics","tide",
+  "tidy","tied","tier","ties","tiff","tike","tiki","tile","till","tils","tilt","time","tine","ting","tins",
+  "tint","tiny","tipi","tips","tire","tirl","tiro","titi","tits","tivy","toad","toby","tods","tody","toea",
+  "toed","toes","toff","toft","tofu","toga","togs","toil","toit","toke","tola","told","tole","toll","tolu",
+  "tomb","tome","toms","tone","tong","tons","tony","took","tool","toom","toon","toot","tope","toph","topi",
+  "tops","tora","torc","tore","tori","torn","toro","torr","tors","tort","tory","tosh","toss","tost","tote",
+  "tots","tour","tout","town","tows","towy","toyo","toys","trad","tram","trap","tray","tree","tref","trek",
+  "tret","trey","trig","trim","trio","trip","trod","trop","trot","trow","troy","true","trug","tsar","tsks",
+  "tuba","tube","tubs","tuck","tufa","tuff","tuft","tugs","tuis","tule","tump","tuna","tune","tung","tuns",
+  "tups","turd","turf","turk","turn","tush","tusk","tuts","tutu","twae","twas","twat","twee","twig","twin",
+  "twit","twos","tyee","tyer","tyes","tyke","tyne","type","typo","typp","typy","tyre","tyro","tzar","udos",
+  "ughs","ugly","ukes","ulan","ulna","ulus","ulva","umbo","umps","unai","unau","unbe","unci","unco","unde",
+  "undo","undy","unit","unto","upas","upby","updo","upon","urbs","urds","urea","urge","uric","urns","ursa",
+  "urus","used","user","uses","utas","uvea","vacs","vagi","vail","vain","vair","vale","vamp","vane","vang",
+  "vans","vara","vars","vary","vasa","vase","vast","vats","vatu","vaus","vavs","vaws","veal","veep","veer",
+  "vees","veil","vein","vela","veld","vena","vend","vent","vera","verb","vert","very","vest","veto","vets",
+  "vext","vial","vibe","vice","vide","vied","vier","vies","view","viga","vigs","vile","vill","vims","vina",
+  "vine","vino","viny","viol","virl","visa","vise","vita","viva","vive","voes","void","vole","volt","vote",
+  "vows","vrow","vugg","vugh","vugs","wabs","wack","wade","wadi","wads","wady","waes","waff","waft","wage",
+  "wags","waif","wail","wain","wair","wait","wake","wale","walk","wall","waly","wame","wand","wane","wans",
+  "want","wany","waps","ward","ware","wark","warm","warn","warp","wars","wart","wary","wash","wasp","wast",
+  "wats","watt","wauk","waul","waur","wave","wavy","wawl","waws","waxy","ways","weak","weal","wean","wear",
+  "webs","weds","weed","week","weel","ween","weep","weer","wees","weet","weft","weir","weka","weld","well",
+  "welt","wend","wens","went","wept","were","wert","west","wets","wham","whap","what","whee","when","whet",
+  "whew","whey","whid","whig","whim","whin","whip","whir","whit","whiz","whoa","whom","whop","whys","wich",
+  "wick","wide","wife","wigs","wild","wile","will","wilt","wily","wimp","wind","wine","wing","wink","wino",
+  "wins","winy","wipe","wire","wiry","wise","wish","wisp","wiss","wist","wite","with","wits","wive","woad",
+  "woes","wogs","woke","woks","wold","wolf","womb","wonk","wons","wont","wood","woof","wool","woos","wops",
+  "word","wore","work","worm","worn","wort","wost","wots","wove","wows","wrap","wren","writ","wuss","wych",
+  "wyes","wyle","wynd","wynn","wyns","wyte","xyst","yack","yaff","yagi","yaks","yald","yams","yang","yank",
+  "yaps","yard","yare","yarn","yaud","yaup","yawl","yawn","yawp","yaws","yays","yeah","yean","year","yeas",
+  "yech","yegg","yeld","yelk","yell","yelp","yens","yerk","yeti","yett","yeuk","yews","yids","yill","yins",
+  "yipe","yips","yird","yirr","ylem","yobs","yock","yodh","yods","yoga","yogh","yogi","yoke","yoks","yolk",
+  "yond","yoni","yore","your","yowe","yowl","yows","yuan","yuca","yuch","yuck","yuga","yuks","yule","yups",
+  "yurt","ywis","zags","zany","zaps","zarf","zeal","zebu","zeds","zees","zein","zeks","zerk","zero","zest",
+  "zeta","zigs","zill","zinc","zing","zins","zips","ziti","zits","zoea","zoic","zone","zonk","zoom","zoon",
+  "zoos","zori","zyme"
+];
+
+const ANSWERS = [
+  "abba","abed","able","ache","acid","acme","acne","acre","aero","aged","ahem","aide","airy","ajar","akin","alan","ally","alma","alms","aloe","also","alto","alum","amen","amid","amin","amir","ammo","amok","anew","anil","anna","anon","ante","anti","anus","apex","aqua","arch","area","aria","arid","army","arse","arty","atom","auld","aunt","aura","auto","avid","away","awol","axed","axel","axis","axle","baal","baba","babe","babu","baby","bach","back","bail","bait","bake","bald","bale","ball","balm","band","bang","bank","barb","bare","bark","barn","base","bash",
+  "bask","bate","bath","bead","beak","beam","bean","bear","beat","beau","beck","beef","been","beer","beet","bell","belt","bend","bene","bent","berg","best","beta","beth","bias","biff","bike","bill","bind","bird","bite","bled","blew","blob","bloc","blot","blow","blue","blur","boat","bock","body","boil","bold","bolt","bomb","bond","bone","bony","book","boom","boon","boot","bora","bore","born","both","bout","bowl","brad","bran","brat","bred","brew","brie","brig","brim","brit","brow","buck","buff","bulb","bulk","bull","bump","bund","bunk","bunt","buoy","burg",
+  "burn","bury","bush","bust","busy","bute","byte","cade","cafe","cage","cain","cake","calf","call","calm","came","camp","cape","capo","carb","card","care","carl","cart","casa","case","cash","cask","cast","cate","cave","cell","cent","cham","chao","chat","chef","chew","chez","chic","chin","chip","chop","chub","chug","chum","ciao","cine","cite","city","clad","clan","clap","claw","clay","clip","club","clue","coal","coat","coca","cock","coco","code","coed","coil","coin","coke","cold","cole","colt","coma","comb","come","comp","cone","cook","cool","coon","coop",
+  "copy","cord","core","cork","corn","cory","cost","cosy","cove","crab","crew","crib","cris","croc","crop","crow","crux","cube","cuff","cull","cult","cunt","curb","curd","cure","curl","curt","cute","cyan","cyst","czar","dada","daft","dahl","dale","dame","damp","dang","dare","dark","darn","dart","dash","data","date","davy","dawn","daze","dead","deaf","deal","dean","dear","debt","deck","deem","deep","deer","deft","defy","deli","demo","dent","deny","desk","deva","dial","dibs","dice","dick","died","diet","dill","dime","dine","ding","dink","dire","dirt","disc",
+  "dish","disk","diva","dive","dock","dodo","doge","doll","dome","dona","done","doom","door","dope","dorm","dory","dose","dost","doth","dove","down","drag","draw","drip","drop","drum","dual","duck","duct","duds","duel","duet","duff","duke","dull","duma","dump","dung","dunk","dupe","dusk","dust","duty","dyed","dyer","each","earl","earn","ease","east","easy","echo","eddy","edge","edit","else","emit","envy","epic","euro","ever","evil","exam","exec","exes","exit","expo","eyed","eyre","face","fact","fade","fail","fair","fall","fame","fang","fare","farm","fast",
+  "fate","faux","fear","feed","feel","feet","fell","felt","feud","fiat","fife","file","fill","film","find","fine","fink","fire","firm","fish","fist","five","flag","flat","flea","fled","flee","flew","flex","flip","flog","flop","flow","flue","flux","foal","foam","foil","fold","folk","fond","font","food","fool","foot","fora","ford","fore","fork","form","fort","foss","foul","four","fowl","foxy","frat","fray","free","fret","frog","from","fuck","fuel","fuji","full","fund","funk","fury","fuse","fuss","fuzz","gaga","gage","gain","gala","gall","game","gang","gaol",
+  "garb","gash","gasp","gate","gear","geek","geez","gene","gent","germ","gift","gill","gilt","gimp","girl","give","glee","glow","glue","glut","goal","goat","goes","gogo","gold","golf","gone","gong","good","goon","gosh","gout","gown","grad","gram","gran","gray","grey","grid","grim","grip","grit","grow","guan","gulf","gull","gulp","gush","gust","haha","hail","hair","haji","half","hall","halo","halt","hand","hang","hard","hark","harm","hart","hash","hast","hate","hath","haul","have","hawk","hazy","head","heal","heap","hear","heat","heed","heel","heft","heil",
+  "heir","held","hell","helm","help","herb","herd","here","hero","hide","high","hike","hill","hilt","hind","hint","hire","hist","hive","hock","hold","hole","holt","holy","home","homo","hong","hood","hoof","hook","hoop","hope","horn","host","hour","hove","howe","howl","huff","huge","hula","hulk","hull","hump","hung","hunk","hunt","hurl","hurt","hush","husk","hwan","hymn","iced","icky","icon","idea","idle","idly","idol","iffy","imam","inch","info","into","iota","iris","iron","isle","itch","item","jack","jade","jail","jake","jane","java","jazz","jean","jeep",
+  "jeez","jeon","jest","jinx","jive","joey","john","join","joke","jolt","josh","juba","judo","juju","juke","jump","junk","jury","just","jute","kale","kami","kana","kane","kart","kata","keel","keen","keep","kelp","kemp","kent","kept","kern","keto","khan","kick","kill","kiln","kilo","kilt","kind","king","kink","kino","kirk","kiss","kite","kiwi","knee","knew","knit","knob","knot","know","kohl","kors","kris","lace","lack","lacy","lady","laid","lain","lair","lake","lakh","lama","lamb","lamp","land","lane","lang","lard","lark","lars","lash","last","late","laud",
+  "lava","lawn","lazy","lead","leaf","leak","lean","leap","lear","leek","left","lend","leno","lens","lent","lest","levy","lewd","liar","lice","lick","lido","lied","lien","lieu","life","lift","like","lily","lima","limb","lime","limo","limp","line","ling","link","lino","lint","lion","lira","lire","lisp","list","lite","live","load","loaf","loan","lobe","lobo","loch","loci","lock","loco","lode","loft","logo","loin","lone","long","look","loom","loon","loop","loot","lord","lore","lose","loss","lost","loud","love","lowe","lube","luce","luck","luge","lull","lulu",
+  "lump","luna","lung","lure","lurk","lush","lust","lute","lutz","luxe","lynx","mace","mach","mack","made","mage","magi","maid","mail","main","make","mako","male","mall","malt","mama","mana","mane","mano","many","marc","mare","mark","mars","mart","mash","mask","mass","mast","mate","math","maud","maul","maxi","maya","mayo","maze","mead","meal","mean","meat","meek","meet","meld","melt","memo","mend","menu","meow","mere","mesa","mesh","mess","meta","meth","mica","mice","mick","midi","mike","mild","mile","milk","mill","milo","mime","mina","mind","mine","mini",
+  "mink","mint","mire","miso","miss","mist","mite","mitt","moat","mock","mode","modi","mojo","mold","mole","moly","monk","mono","mood","moon","moor","moot","mora","more","morn","mort","most","moth","move","much","muck","muff","mule","mull","muni","muse","mush","musk","must","mute","mutt","myth","nada","nail","name","nana","nave","navy","nazi","near","neat","neck","need","nene","neon","nest","neve","news","newt","next","nice","nick","nigh","nine","nite","node","noel","noir","none","nook","noon","nope","norm","nose","nosy","note","noun","nous","nova","nude",
+  "nuke","null","numb","oars","oath","oats","obey","odor","ogre","oily","okay","omen","omer","omit","once","only","onto","onus","onyx","ooze","opal","open","opus","oral","orca","orgy","otto","ouch","oust","oval","oven","over","owed","oxen","pace","pack","pact","page","paid","pail","pain","pair","pale","pall","palm","pane","pang","pant","papa","para","pare","park","part","pass","past","pate","path","pave","pawn","peak","pear","peat","peck","peed","peek","peel","peep","peer","pele","pelt","pent","peri","perk","perm","peso","pest","pfft","phat","phew","pick",
+  "pied","pier","pike","pile","pill","pimp","pine","pink","pint","pipe","pita","pity","plan","plat","play","plea","pled","plot","plow","ploy","plug","plum","plus","poem","poet","poke","pole","poll","polo","poly","pomp","pond","pong","pony","pooh","pool","poor","pope","pore","pork","porn","port","pose","posh","post","pour","pout","pram","pray","prep","prey","prim","prod","prof","prog","prom","prop","psst","puck","puff","pugh","puja","pull","pulp","puma","pump","punt","puny","pure","puri","push","putt","quad","quay","quid","quin","quit","quiz","race","rack",
+  "racy","raff","raft","rage","raid","rail","rain","raja","rake","rami","ramp","rand","rang","rani","rank","rant","rape","rare","rash","rate","rath","rave","raya","read","real","reap","rear","redd","redo","reed","reef","reek","reel","rees","rein","rely","rend","rent","repo","rest","rhea","rice","rich","rick","ride","rife","riff","rift","rind","ring","rink","riot","ripe","rise","risk","rite","ritz","road","roam","roan","robe","rock","rode","role","rolf","roll","romp","roof","rook","room","root","rope","rose","rosy","rota","rote","rout","roux","rove","rube",
+  "ruby","ruck","rudd","rude","ruff","ruin","rule","rump","rune","rung","ruse","rush","rusk","rust","ruth","sack","sade","safe","saga","sage","said","sail","sake","sale","salt","same","sand","sane","sang","sank","sari","sash","saul","save","scab","scam","scan","scar","scat","scot","seal","seam","sear","seat","sect","seed","seek","seem","seen","seep","seer","self","sell","semi","send","sent","sept","sera","sewn","sexy","shad","shah","sham","shat","shaw","shay","shea","shed","shim","shin","ship","shit","shiv","shoe","shoo","shop","shot","show","shri","shun",
+  "shut","sick","side","sift","sigh","sign","silk","sill","silo","silt","sine","sing","sink","sire","site","sith","size","skew","skid","skim","skin","skip","skit","slab","slam","slap","slay","sled","slew","slid","slim","slip","slit","slog","slop","slot","slow","slug","slum","slur","smog","smug","snag","snap","snip","snow","snub","snug","soak","soap","soar","sock","soda","sofa","soft","soil","sola","sold","sole","solo","soma","some","song","soon","soot","sora","sore","sort","soul","soup","sour","sous","sown","soya","span","spar","spat","spec","sped","spew",
+  "spin","spit","spot","spun","spur","stab","stag","star","stat","stay","stem","step","stew","stir","stop","stow","stub","stud","stun","such","suck","sued","suit","sulk","sulu","sumo","sump","sung","sunk","sure","surf","swab","swag","swam","swan","swap","swat","sway","swim","sync","tack","taco","tact","tail","taka","take","tale","talk","tall","tame","tang","tank","tape","taro","tarp","tart","task","tate","taut","taxa","taxi","teak","teal","team","tear","teen","tele","tell","temp","tend","tent","term","tern","test","text","than","that","thaw","thee","them",
+  "then","they","thin","this","thou","thru","thug","thus","tick","tide","tidy","tied","tier","tiff","tiki","tile","till","tilt","time","ting","tint","tiny","tire","toad","toby","toed","tofu","toga","toil","toke","told","toll","tomb","tome","tone","tong","tony","took","tool","toon","toot","tore","tori","torn","toro","tort","tory","tosh","toss","tote","tour","tout","town","trad","tram","trap","tray","tree","trek","trey","trim","trio","trip","trot","troy","true","tsar","tuba","tube","tuck","tuff","tuna","tune","tung","turf","turk","turn","tusk","tutu","twas",
+  "twat","twig","twin","tyne","type","typo","tyre","ugly","undo","unit","unto","upon","urea","urge","used","user","vail","vain","vale","vamp","vane","vary","vase","vast","veal","veer","veil","vein","vent","vera","verb","vert","very","vest","veto","vial","vibe","vice","vide","view","vile","vine","vino","visa","vise","vita","viva","vive","void","volt","vote","wack","wade","wadi","wage","wail","wait","wake","walk","wall","wand","wane","want","ward","ware","warm","warn","warp","wart","wary","wash","wasp","watt","wave","wavy","waxy","weak","wean","wear","weed",
+  "week","weep","weir","weld","well","welt","went","wept","were","west","what","when","whew","whey","whig","whim","whip","whit","whoa","whom","wich","wick","wide","wife","wild","will","wilt","wily","wimp","wind","wine","wing","wink","wipe","wire","wise","wish","with","woke","wolf","womb","wont","wood","wool","word","wore","work","worm","worn","wort","wrap","wren","writ","yang","yank","yard","yarn","yawn","yeah","year","yell","yeti","yoga","yogi","yoke","yolk","your","yuan","yule","zeal","zero","zest","zeta","zinc","zing","zone"
+];
+
+const VALID = new Set(WORDS);
+// Epoch = Fourdle #1 launch date: June 9 2025
+const EPOCH = new Date(2026, 5, 9);
+const ROWS = 6, COLS = 4;
+
+let secret, currentRow, currentCol, gameOver, guessResults, boardState;
+
+// ── PUZZLE NUMBER & DAILY WORD ──
+function puzzleNumber() {
+  const today = new Date(); today.setHours(0,0,0,0);
+  return Math.floor((today - EPOCH) / 86400000) + 1;
+}
+
+// Seeded PRNG (mulberry32) — same seed → same sequence for everyone
+function mulberry32(seed) {
+  return function() {
+    seed |= 0; seed = seed + 0x6D2B79F5 | 0;
+    let t = Math.imul(seed ^ seed >>> 15, 1 | seed);
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t;
+    return ((t ^ t >>> 14) >>> 0) / 4294967296;
+  };
+}
+
+// Fisher-Yates shuffle using the seeded PRNG, then pick by puzzle index
+function dailyWord() {
+  const rand = mulberry32(0xF04D1E); // "FOURDIE" — fixed seed, never change this
+  const list = ANSWERS.slice(); // use curated answer list, not full word list
+  for (let i = list.length - 1; i > 0; i--) {
+    const j = Math.floor(rand() * (i + 1));
+    [list[i], list[j]] = [list[j], list[i]];
+  }
+  return list[(puzzleNumber() - 1) % list.length].toUpperCase();
+}
+
+// ── STATS (localStorage) ──
+function loadStats() {
+  try {
+    const s = JSON.parse(localStorage.getItem('fourdle-stats')) || {};
+    if (!s.dist) s.dist = [0,0,0,0,0,0];
+    return { played:0, wins:0, streak:0, best:0, lastWinDay:0, dist:[0,0,0,0,0,0], ...s };
+  } catch { return {played:0,wins:0,streak:0,best:0,lastWinDay:0,dist:[0,0,0,0,0,0]}; }
+}
+function saveStats(s) { localStorage.setItem('fourdle-stats', JSON.stringify(s)); }
+
+function updateStats(won) {
+  const s = loadStats();
+  const pn = puzzleNumber();
+  s.played++;
+  if (won) {
+    s.wins++;
+    if (s.lastWinDay === pn - 1) s.streak++;
+    else s.streak = 1;
+    s.best = Math.max(s.best, s.streak);
+    s.lastWinDay = pn;
+    // Record which guess number won (1-indexed, stored at index 0-5)
+    const guessNum = guessResults.length;
+    s.dist[guessNum - 1] = (s.dist[guessNum - 1] || 0) + 1;
+  } else {
+    s.streak = 0;
+  }
+  saveStats(s);
+  return s;
+}
+
+// ── STATE PERSISTENCE (so refreshing mid-game restores board) ──
+function saveGameState() {
+  localStorage.setItem('fourdle-state', JSON.stringify({
+    puzzleNum: puzzleNumber(),
+    guessResults,
+    boardState: boardState.map(r => r.map(c => c.letter)),
+    currentRow, gameOver
+  }));
+}
+
+function loadGameState() {
+  try {
+    const raw = localStorage.getItem('fourdle-state');
+    if (!raw) return null;
+    const s = JSON.parse(raw);
+    if (s.puzzleNum !== puzzleNumber()) return null; // new day
+    return s;
+  } catch { return null; }
+}
+
+// ── INIT ──
+function init() {
+  secret = dailyWord();
+  currentRow = 0; currentCol = 0; gameOver = false;
+  guessResults = [];
+  boardState = Array.from({length:ROWS}, () => Array.from({length:COLS}, () => ({letter:'', state:''})));
+
+  buildBoard();
+  buildKeyboard();
+
+  // Restore today's game if it exists
+  const saved = loadGameState();
+  if (saved) {
+    restoreGame(saved);
+  }
+}
+
+function restoreGame(saved) {
+  // Replay each completed row instantly (no animation)
+  for (let r = 0; r < saved.currentRow; r++) {
+    const letters = saved.boardState[r];
+    const result = saved.guessResults[r];
+    for (let c = 0; c < COLS; c++) {
+      boardState[r][c].letter = letters[c];
+      boardState[r][c].state = result[c];
+      const tile = document.getElementById(`tile-${r}-${c}`);
+      tile.textContent = letters[c];
+      tile.dataset.state = result[c];
+    }
+    // Update keyboard
+    letters.forEach((letter, c) => {
+      if (!letter) return;
+      const btn = document.querySelector(`.key[data-key="${letter}"]`);
+      if (!btn) return;
+      const cur = btn.dataset.state;
+      if (!cur || PRIORITY[result[c]] > (PRIORITY[cur]||0)) btn.dataset.state = result[c];
+    });
+    guessResults.push(result);
+  }
+  currentRow = saved.currentRow;
+  currentCol = 0;
+  gameOver = saved.gameOver;
+  if (gameOver) setTimeout(() => showShareModal(loadStats()), 400);
+}
+
+// ── BOARD & KEYBOARD BUILD ──
+function buildBoard() {
+  const el = document.getElementById('board');
+  el.innerHTML = '';
+  for (let r = 0; r < ROWS; r++) {
+    const row = document.createElement('div');
+    row.className = 'row'; row.id = `row-${r}`;
+    for (let c = 0; c < COLS; c++) {
+      const tile = document.createElement('div');
+      tile.className = 'tile'; tile.id = `tile-${r}-${c}`;
+      row.appendChild(tile);
+    }
+    el.appendChild(row);
+  }
+}
+
+function buildKeyboard() {
+  const layout = [
+    ['Q','W','E','R','T','Y','U','I','O','P'],
+    ['A','S','D','F','G','H','J','K','L'],
+    ['ENTER','Z','X','C','V','B','N','M','⌫']
+  ];
+  const el = document.getElementById('keyboard');
+  el.innerHTML = '';
+  for (const keys of layout) {
+    const row = document.createElement('div');
+    row.className = 'kb-row';
+    for (const k of keys) {
+      const btn = document.createElement('button');
+      btn.className = 'key' + (k.length > 1 ? ' wide' : '');
+      btn.textContent = k;
+      btn.dataset.key = k;
+      btn.addEventListener('click', () => handleKey(k));
+      row.appendChild(btn);
+    }
+    el.appendChild(row);
+  }
+}
+
+// ── INPUT ──
+document.addEventListener('keydown', e => {
+  if (e.ctrlKey || e.metaKey || e.altKey) return;
+  if (document.querySelector('.overlay.open')) return;
+  const k = e.key.toUpperCase();
+  if (k === 'BACKSPACE') handleKey('⌫');
+  else if (k === 'ENTER') handleKey('ENTER');
+  else if (/^[A-Z]$/.test(k)) handleKey(k);
+});
+
+function handleKey(key) {
+  if (gameOver) return;
+  if (key === '⌫') {
+    if (currentCol > 0) {
+      currentCol--;
+      boardState[currentRow][currentCol].letter = '';
+      const tile = document.getElementById(`tile-${currentRow}-${currentCol}`);
+      tile.textContent = '';
+      delete tile.dataset.state;
+      delete tile.dataset.letter;
+    }
+  } else if (key === 'ENTER') {
+    submitGuess();
+  } else if (/^[A-Z]$/.test(key) && currentCol < COLS) {
+    boardState[currentRow][currentCol].letter = key;
+    const tile = document.getElementById(`tile-${currentRow}-${currentCol}`);
+    tile.textContent = key;
+    tile.dataset.letter = key;
+    tile.dataset.state = 'tbd';
+    currentCol++;
+  }
+}
+
+// ── SUBMIT ──
+function submitGuess() {
+  if (currentCol < COLS) { shakeRow(currentRow); toast('Not enough letters'); return; }
+  const guess = boardState[currentRow].map(c => c.letter).join('');
+  if (!VALID.has(guess.toLowerCase())) { shakeRow(currentRow); toast('Not in word list'); return; }
+
+  const result = score(guess);
+  const row = currentRow;
+  revealRow(row, result, () => {
+    updateKeyboard(guess, result);
+    guessResults.push(result);
+    currentRow++;
+    currentCol = 0;
+
+    const won = result.every(r => r === 'correct');
+    if (won || currentRow === ROWS) {
+      gameOver = true;
+      const stats = updateStats(won);
+      saveGameState();
+      if (won) {
+        const msgs = ['Genius!','Magnificent!','Impressive!','Splendid!','Great!','Phew!'];
+        toast(msgs[row] || 'Nice!', 2000);
+        setTimeout(() => bounceRow(row), 200);
+        setTimeout(() => showShareModal(stats), 2500);
+      } else {
+        toast(secret, 3000);
+        setTimeout(() => showShareModal(stats), 3500);
+      }
+    } else {
+      saveGameState();
+    }
+  });
+}
+
+function score(guess) {
+  const result = Array(COLS).fill('absent');
+  const sec = secret.split(''); const g = guess.split('');
+  for (let i = 0; i < COLS; i++) if (g[i]===sec[i]) { result[i]='correct'; sec[i]=g[i]=null; }
+  for (let i = 0; i < COLS; i++) {
+    if (!g[i]) continue;
+    const idx = sec.indexOf(g[i]);
+    if (idx !== -1) { result[i]='present'; sec[idx]=null; }
+  }
+  return result;
+}
+
+// ── ANIMATIONS ──
+function revealRow(r, result, cb) {
+  const GAP = 280;
+  for (let c = 0; c < COLS; c++) {
+    const tile = document.getElementById(`tile-${r}-${c}`);
+    setTimeout(() => {
+      tile.classList.add('flip-in');
+      tile.addEventListener('animationend', () => {
+        tile.classList.remove('flip-in');
+        tile.dataset.state = result[c];
+        tile.classList.add('flip-out');
+        tile.addEventListener('animationend', () => tile.classList.remove('flip-out'), {once:true});
+      }, {once:true});
+    }, c * GAP);
+  }
+  setTimeout(cb, COLS * GAP + 300);
+}
+
+function shakeRow(r) {
+  const row = document.getElementById(`row-${r}`);
+  row.classList.add('shake');
+  row.addEventListener('animationend', () => row.classList.remove('shake'), {once:true});
+}
+
+function bounceRow(r) {
+  for (let c = 0; c < COLS; c++) {
+    const tile = document.getElementById(`tile-${r}-${c}`);
+    setTimeout(() => {
+      tile.classList.add('bounce');
+      tile.addEventListener('animationend', () => tile.classList.remove('bounce'), {once:true});
+    }, c * 90);
+  }
+}
+
+// ── KEYBOARD UPDATE ──
+const PRIORITY = {correct:3, present:2, absent:1};
+function updateKeyboard(guess, result) {
+  for (let i = 0; i < COLS; i++) {
+    const btn = document.querySelector(`.key[data-key="${guess[i]}"]`);
+    if (!btn) continue;
+    const cur = btn.dataset.state;
+    if (!cur || PRIORITY[result[i]] > (PRIORITY[cur]||0)) btn.dataset.state = result[i];
+  }
+}
+
+// ── TOASTS ──
+function toast(msg, dur=1600) {
+  const el = document.createElement('div');
+  el.className = 'toast';
+  el.style.setProperty('--dur', dur+'ms');
+  el.textContent = msg;
+  document.getElementById('toasts').appendChild(el);
+  el.addEventListener('animationend', () => el.remove());
+}
+
+// ── SHARE MODAL ──
+// Show stats/distribution without revealing the answer (mid-game)
+function showStatsOnly() {
+  const stats = loadStats();
+  document.getElementById('share-result').textContent = '';
+  document.getElementById('share-sub').textContent = `Fourdle #${puzzleNumber()}`;
+  document.getElementById('share-grid').textContent = '';
+  document.getElementById('share-copy-btn').style.display = 'none';
+  document.getElementById('share-copied-msg').style.display = 'none';
+  document.getElementById('share-countdown').style.display = 'none';
+
+  if (stats) {
+    document.getElementById('st-played').textContent = stats.played;
+    document.getElementById('st-winpct').textContent = stats.played ? Math.round(stats.wins / stats.played * 100) : 0;
+    document.getElementById('st-streak').textContent = stats.streak;
+    document.getElementById('st-best').textContent = stats.best;
+
+    const dist = stats.dist || [0,0,0,0,0,0];
+    const maxVal = Math.max(...dist, 1);
+    const container = document.getElementById('dist-bars');
+    container.innerHTML = '';
+    dist.forEach((count, i) => {
+      const row = document.createElement('div');
+      row.className = 'dist-row';
+      const pct = Math.max(Math.round(count / maxVal * 100), count > 0 ? 8 : 5);
+      row.innerHTML = `
+        <div class="dist-num">${i + 1}</div>
+        <div class="dist-bar-wrap">
+          <div class="dist-bar" style="width:${pct}%">${count}</div>
+        </div>`;
+      container.appendChild(row);
+    });
+  }
+  openOverlay('share-overlay');
+}
+
+function showShareModal(stats) {
+  // Restore elements that showStatsOnly may have hidden
+  document.getElementById('share-copy-btn').style.display = '';
+  document.getElementById('share-copied-msg').style.display = '';
+  document.getElementById('share-countdown').style.display = '';
+  const pn = puzzleNumber();
+  const won = guessResults.length && guessResults[guessResults.length-1].every(s=>s==='correct');
+  const scoreStr = won ? `${guessResults.length}/6` : 'X/6';
+
+  document.getElementById('share-result').textContent = won ? '🎉 You got it!' : `The word was ${secret}`;
+  document.getElementById('share-sub').textContent = `Fourdle #${pn} — ${scoreStr}`;
+
+  const emojis = {correct:'🟩', present:'🟨', absent:'⬛'};
+  document.getElementById('share-grid').textContent =
+    guessResults.map(row => row.map(s => emojis[s]).join('')).join('\n');
+
+  if (stats) {
+    document.getElementById('st-played').textContent = stats.played;
+    document.getElementById('st-winpct').textContent = stats.played ? Math.round(stats.wins / stats.played * 100) : 0;
+    document.getElementById('st-streak').textContent = stats.streak;
+    document.getElementById('st-best').textContent = stats.best;
+
+    // Render guess distribution histogram
+    const won = guessResults.length && guessResults[guessResults.length-1].every(s=>s==='correct');
+    const currentGuessNum = won ? guessResults.length : -1;
+    const dist = stats.dist || [0,0,0,0,0,0];
+    const maxVal = Math.max(...dist, 1);
+    const container = document.getElementById('dist-bars');
+    container.innerHTML = '';
+    dist.forEach((count, i) => {
+      const row = document.createElement('div');
+      row.className = 'dist-row';
+      const pct = Math.max(Math.round(count / maxVal * 100), count > 0 ? 8 : 5);
+      const isHighlight = (i + 1) === currentGuessNum;
+      row.innerHTML = `
+        <div class="dist-num">${i + 1}</div>
+        <div class="dist-bar-wrap">
+          <div class="dist-bar${isHighlight ? ' highlight' : ''}" style="width:${pct}%">${count}</div>
+        </div>`;
+      container.appendChild(row);
+    });
+  }
+
+  openOverlay('share-overlay');
+  startCountdown();
+}
+
+function copyResult() {
+  const pn = puzzleNumber();
+  const won = guessResults.length && guessResults[guessResults.length-1].every(s=>s==='correct');
+  const scoreStr = won ? `${guessResults.length}/6` : 'X/6';
+  const emojis = {correct:'🟩', present:'🟨', absent:'⬛'};
+  const grid = guessResults.map(row => row.map(s => emojis[s]).join('')).join('\n');
+  const text = `Fourdle #${pn} ${scoreStr}\n\n${grid}\n\nhttps://fiobuzzman.github.io/fourdle-game/`;
+
+  if (navigator.share) {
+    navigator.share({ text }).catch(() => fallbackCopy(text));
+  } else {
+    fallbackCopy(text);
+  }
+}
+
+function fallbackCopy(text) {
+  navigator.clipboard.writeText(text).then(() => {
+    const el = document.getElementById('share-copied-msg');
+    el.style.opacity = '1';
+    setTimeout(() => el.style.opacity = '0', 2000);
+  });
+}
+
+// ── COUNTDOWN ──
+function startCountdown() {
+  function tick() {
+    const now = new Date();
+    const tomorrow = new Date(now); tomorrow.setDate(tomorrow.getDate()+1); tomorrow.setHours(0,0,0,0);
+    const diff = tomorrow - now;
+    const h = String(Math.floor(diff/3600000)).padStart(2,'0');
+    const m = String(Math.floor((diff%3600000)/60000)).padStart(2,'0');
+    const s = String(Math.floor((diff%60000)/1000)).padStart(2,'0');
+    const el = document.getElementById('countdown-time');
+    if (el) el.textContent = `${h}:${m}:${s}`;
+  }
+  tick();
+  setInterval(tick, 1000);
+}
+
+// ── OVERLAYS ──
+function openOverlay(id) { document.getElementById(id).classList.add('open'); }
+function closeOverlay(id) { document.getElementById(id).classList.remove('open'); }
+
+document.getElementById('help-btn').addEventListener('click', () => openOverlay('help-overlay'));
+document.getElementById('stats-btn').addEventListener('click', () => {
+  if (gameOver) {
+    showShareModal(loadStats());
+  } else {
+    showStatsOnly();
+  }
+});
+document.getElementById('theme-btn').addEventListener('click', toggleTheme);
+
+// close on backdrop click
+document.querySelectorAll('.overlay').forEach(el => {
+  el.addEventListener('click', e => { if (e.target === el) el.classList.remove('open'); });
+});
+
+// ── DARK MODE ──
+function toggleTheme() {
+  const dark = document.documentElement.getAttribute('data-theme') !== 'dark';
+  applyTheme(dark);
+}
+function applyTheme(dark) {
+  document.documentElement.setAttribute('data-theme', dark ? 'dark' : 'light');
+  document.getElementById('theme-meta').content = dark ? '#121213' : '#ffffff';
+  document.getElementById('theme-icon').innerHTML = dark
+    ? '<path d="M12 7c-2.76 0-5 2.24-5 5s2.24 5 5 5 5-2.24 5-5-2.24-5-5-5zM2 13h2v-2H2v2zm18 0h2v-2h-2v2zM11 2v2h2V2h-2zm0 18v2h2v-2h-2zM5.64 6.36l-1.41-1.41-1.42 1.42 1.42 1.41 1.41-1.42zm14.14 11.31l-1.41-1.41-1.42 1.42 1.42 1.41 1.41-1.42zM5.64 17.66l-1.42 1.41 1.41 1.42 1.42-1.42-1.41-1.41zm11.31-14.13l1.41 1.41 1.42-1.41-1.42-1.42-1.41 1.42z"/>' 
+    : '<path d="M12 3c-4.97 0-9 4.03-9 9s4.03 9 9 9 9-4.03 9-9c0-.46-.04-.92-.1-1.36-.98 1.37-2.58 2.26-4.4 2.26-2.98 0-5.4-2.42-5.4-5.4 0-1.81.89-3.42 2.26-4.4-.44-.06-.9-.1-1.36-.1z"/>';
+  localStorage.setItem('fourdle-theme', dark ? 'dark' : 'light');
+}
+
+// restore theme
+const savedTheme = localStorage.getItem('fourdle-theme');
+if (savedTheme === 'dark') applyTheme(true);
+
+// ── FIRST VISIT: show how to play ──
+if (!localStorage.getItem('fourdle-seen')) {
+  localStorage.setItem('fourdle-seen', '1');
+  setTimeout(() => openOverlay('help-overlay'), 300);
+}
+
+init();
+</script>
+</body>
+</html>
