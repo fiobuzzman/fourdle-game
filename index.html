@@ -98,8 +98,8 @@
   .hdr-side {
     display: flex;
     align-items: center;
-    gap: 2px;
-    width: 152px;
+    gap: 0px;
+    width: 144px;
   }
   .hdr-side.right { justify-content: flex-end; }
 
@@ -119,16 +119,16 @@
     background: none;
     border: none;
     cursor: pointer;
-    padding: 6px;
+    padding: 4px;
     color: var(--tone1);
     display: flex;
     align-items: center;
     justify-content: center;
     border-radius: 4px;
-    min-width: 40px;
-    min-height: 40px; /* 44px tap target */
+    min-width: 34px;
+    min-height: 34px;
   }
-  .icon-btn svg { width: 22px; height: 22px; fill: var(--tone1); }
+  .icon-btn svg { width: 20px; height: 20px; fill: var(--tone1); }
 
   /* ── TOASTS ── */
   #toasts {
@@ -1577,7 +1577,7 @@ init();
       document.getElementById('lb-meta').textContent = `${players.length} player${players.length!==1?'s':''} on the board`;
 
     } catch(e) {
-      container.innerHTML = '<div class="lb-empty">Couldn't load scores — check your connection</div>';
+      container.innerHTML = '<div class="lb-empty">Unable to load scores. Check your connection.</div>';
     }
   }
 
@@ -1589,12 +1589,15 @@ init();
 
   // ── TRIGGER: listens for puzzle completion event ──
   window.addEventListener('puzzleComplete', async (e) => {
+    console.log('[Fourdle] puzzleComplete event received', e.detail);
     window._lastGuessCount = e.detail.guessCount;
     const username = getUsername();
+    console.log('[Fourdle] username:', username);
     if (!username) {
-      // Show username prompt — score is submitted after they pick a name
+      console.log('[Fourdle] No username — showing prompt');
       setTimeout(() => window.openOverlay('username-overlay'), 900);
     } else {
+      console.log('[Fourdle] Submitting score for', username);
       await window.submitScoreToFirebase();
     }
   });
