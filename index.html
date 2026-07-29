@@ -1515,9 +1515,19 @@ init();
 
     const ref = doc(db, 'players', username);
     const snap = await getDoc(ref);
-    if (!snap.exists()) return;
 
-    const data = snap.data();
+    // If document was deleted (e.g. after a reset), recreate it fresh first
+    if (!snap.exists()) {
+      await setDoc(ref, {
+        username,
+        played: 0, wins: 0, streak: 0, best: 0,
+        totalGuesses: 0, lastPuzzle: 0,
+        createdAt: Date.now()
+      });
+    }
+
+    const data = snap.exists() ? snap.data() : { played:0, wins:0, streak:0, best:0, totalGuesses:0, lastPuzzle:0 };
+
     // Don't double-submit same puzzle
     if (data.lastPuzzle === pn) return;
 
