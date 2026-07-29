@@ -1442,14 +1442,38 @@ init();
     window.closeOverlay('username-overlay');
   };
 
+  // ── USERNAME PROFANITY FILTER ──
+  // Normalises leetspeak (3=e, 0=o, 1=i, 4=a, 5=s) before checking
+  const BAD_WORDS = [
+    'anal','anus','arse','ass','bastard','bitch','bollox','bollocks','bollix',
+    'bugger','cock','coon','crap','cuck','cunt','damn','dick','dildo','dyke',
+    'fag','fart','fuck','fucker','fudge','gook','hell','homo','jerk','kike',
+    'knob','mick','milf','muff','nazi','nig','paki','penis','piss','poon',
+    'porn','pube','puke','pussy','puta','rape','scum','sex','shag','shit',
+    'slag','slut','smut','spic','tit','turd','twat','vag','wank','whore','wog'
+  ];
+
+  function containsBadWord(name) {
+    // Normalise leetspeak substitutions
+    const normalised = name
+      .replace(/3/g,'e').replace(/0/g,'o').replace(/1/g,'i')
+      .replace(/4/g,'a').replace(/5/g,'s').replace(/8/g,'b')
+      .replace(/\$/g,'s').replace(/@/g,'a').replace(/!/g,'i');
+    return BAD_WORDS.some(w => normalised.includes(w));
+  }
+
   document.getElementById('username-submit').addEventListener('click', async () => {
     const input = document.getElementById('username-input');
     const err   = document.getElementById('username-error');
     const name  = input.value.trim().toUpperCase();
     err.textContent = '';
 
-    if (name.length < 2) { err.textContent = 'Must be at least 2 characters'; return; }
+    if (name.length < 2)  { err.textContent = 'Must be at least 2 characters'; return; }
+    if (name.length > 12) { err.textContent = 'Max 12 characters'; return; }
+    if (!/^[A-Z]/.test(name)) { err.textContent = 'Must start with a letter'; return; }
     if (!/^[A-Z0-9_]+$/.test(name)) { err.textContent = 'Letters, numbers and _ only'; return; }
+    if (/^[0-9_]+$/.test(name)) { err.textContent = 'Must contain at least one letter'; return; }
+    if (containsBadWord(name.toLowerCase())) { err.textContent = 'That name isn't allowed — try another'; return; }
 
     // Check not taken
     const existing = await getDoc(doc(db, 'players', name));
@@ -1466,8 +1490,17 @@ init();
       createdAt: Date.now()
     });
 
-    // Now submit the score they just earned
-    window.submitScoreToFirebase();
+    // If they came from the leaderboard button, open it now
+    if (window._openLeaderboardAfterUsername) {
+      window._openLeaderboardAfterUsername = false;
+      setTimeout(() => {
+        window.openOverlay('leaderboard-overlay');
+        renderLeaderboard();
+      }, 300);
+    } else {
+      // Otherwise submit the score they just earned from finishing a puzzle
+      window.submitScoreToFirebase();
+    }
   });
 
   // ── SUBMIT SCORE ──
@@ -1583,8 +1616,15 @@ init();
 
   // Open leaderboard
   document.getElementById('leaderboard-btn').addEventListener('click', () => {
-    window.openOverlay('leaderboard-overlay');
-    renderLeaderboard();
+    const username = getUsername();
+    if (!username) {
+      // No username yet — prompt them first, then show leaderboard after
+      window._openLeaderboardAfterUsername = true;
+      setTimeout(() => window.openOverlay('username-overlay'), 100);
+    } else {
+      window.openOverlay('leaderboard-overlay');
+      renderLeaderboard();
+    }
   });
 
   // ── TRIGGER: listens for puzzle completion event ──
