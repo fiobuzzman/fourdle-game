@@ -1504,12 +1504,14 @@ init();
   });
 
   // ── SUBMIT SCORE ──
+  // Increments Firebase stats by 1 game — never copies full local history
   window.submitScoreToFirebase = async function() {
     const username = getUsername();
     if (!username) return;
 
     const localStats = window.loadStats();
     const pn = window.puzzleNumber();
+    const won = localStats.lastWinDay === pn;
 
     const ref = doc(db, 'players', username);
     const snap = await getDoc(ref);
@@ -1519,12 +1521,23 @@ init();
     // Don't double-submit same puzzle
     if (data.lastPuzzle === pn) return;
 
+    // Calculate new streak based on Firebase data only (not local history)
+    let newStreak = data.streak || 0;
+    let newBest   = data.best   || 0;
+    if (won) {
+      // Consecutive day check using Firebase lastPuzzle
+      newStreak = (data.lastPuzzle === pn - 1) ? newStreak + 1 : 1;
+      newBest   = Math.max(newBest, newStreak);
+    } else {
+      newStreak = 0;
+    }
+
     await setDoc(ref, {
       username,
-      played:       localStats.played,
-      wins:         localStats.wins,
-      streak:       localStats.streak,
-      best:         localStats.best,
+      played:       (data.played || 0) + 1,
+      wins:         (data.wins   || 0) + (won ? 1 : 0),
+      streak:       newStreak,
+      best:         newBest,
       totalGuesses: (data.totalGuesses || 0) + (window._lastGuessCount || 0),
       lastPuzzle:   pn,
       updatedAt:    Date.now()
