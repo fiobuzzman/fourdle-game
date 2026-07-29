@@ -1470,9 +1470,9 @@ init();
 
     if (name.length < 2)  { err.textContent = "Must be at least 2 characters"; return; }
     if (name.length > 12) { err.textContent = "Max 12 characters"; return; }
-    if (!/^[A-Z]/.test(name)) { err.textContent = "Must start with a letter"; return; }
-    if (!/^[A-Z0-9_]+$/.test(name)) { err.textContent = "Letters, numbers and _ only"; return; }
-    if (/^[0-9_]+$/.test(name)) { err.textContent = "Must contain at least one letter"; return; }
+    if (!/^[A-ZÀ-ÖØ-öø-ÿ]/i.test(name)) { err.textContent = "Must start with a letter"; return; }
+    if (!/^[A-Z0-9_À-ÖØ-öø-ÿ]+$/i.test(name)) { err.textContent = "Letters, numbers and _ only"; return; }
+    if (/^[0-9_]+$/.test(name)) { err.textContent = "Must contain at least one letter"; return; } // accented letters pass
     if (containsBadWord(name.toLowerCase())) { err.textContent = "That name is not allowed - pick another"; return; }
 
     // Check not taken
