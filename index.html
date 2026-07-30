@@ -383,9 +383,7 @@
   .lb-stat { text-align:center; width:44px; }
   .lb-empty { text-align:center; color:var(--tone2); font-size:0.85rem; padding:24px 0; }
   .lb-loading { text-align:center; color:var(--tone2); padding:24px 0; font-size:0.85rem; }
-  #lb-tabs { display:flex; gap:0; margin-bottom:16px; border-bottom:2px solid var(--divider); }
-  .lb-tab { flex:1; padding:8px; font-size:0.78rem; font-weight:600; text-transform:uppercase; letter-spacing:0.06em; background:none; border:none; color:var(--tone2); cursor:pointer; border-bottom:2px solid transparent; margin-bottom:-2px; transition:color 0.15s, border-color 0.15s; }
-  .lb-tab.active { color:var(--correct); border-bottom-color:var(--correct); }
+
 
   /* Username prompt */
   #username-overlay .modal-box { max-width:300px; }
@@ -1390,11 +1388,7 @@ init();
   <div class="modal-box">
     <button class="modal-close" onclick="closeOverlay('leaderboard-overlay')">&#x2715;</button>
     <div class="modal-title">Leaderboard 🏆</div>
-    <div id="lb-tabs">
-      <button class="lb-tab active" onclick="switchTab('streak')">Streak</button>
-      <button class="lb-tab" onclick="switchTab('winpct')">Win %</button>
-      <button class="lb-tab" onclick="switchTab('avg')">Avg Guesses</button>
-    </div>
+
     <div id="lb-content"><div class="lb-loading">Loading...</div></div>
     <p class="lb-meta" id="lb-meta"></p>
   </div>
@@ -1498,8 +1492,12 @@ init();
         renderLeaderboard();
       }, 300);
     } else {
-      // Otherwise submit the score they just earned from finishing a puzzle
-      window.submitScoreToFirebase();
+      // Submit score then show leaderboard
+      await window.submitScoreToFirebase();
+      setTimeout(() => {
+        window.openOverlay('leaderboard-overlay');
+        renderLeaderboard();
+      }, 400);
     }
   });
 
@@ -1555,15 +1553,8 @@ init();
   };
 
   // ── LEADERBOARD DISPLAY ──
-  let currentTab = 'streak';
-
-  window.switchTab = function(tab) {
-    currentTab = tab;
-    document.querySelectorAll('.lb-tab').forEach(b => b.classList.remove('active'));
-    event.target.classList.add('active');
-    renderLeaderboard();
-  };
-
+  // ── LEADERBOARD DISPLAY ──
+  // Ranked by avg guesses (fewest = best), falls back to win % then wins
   async function renderLeaderboard() {
     const container = document.getElementById('lb-content');
     container.innerHTML = '<div class="lb-loading">Loading...</div>';
@@ -1578,66 +1569,57 @@ init();
         return;
       }
 
-      // Sort by selected tab
-      if (currentTab === 'streak') {
-        players.sort((a,b) => (b.streak - a.streak) || (b.wins - a.wins));
-      } else if (currentTab === 'winpct') {
-        players.sort((a,b) => {
-          const pa = a.played ? a.wins/a.played : 0;
-          const pb = b.played ? b.wins/b.played : 0;
-          return pb - pa || b.wins - a.wins;
-        });
-      } else {
-        // avg guesses - lower is better, only count players with wins
-        players = players.filter(p => p.wins > 0);
-        players.sort((a,b) => {
-          const aa = a.totalGuesses / a.wins;
-          const ab = b.totalGuesses / b.wins;
-          return aa - ab;
-        });
-      }
+      // Only rank players who have played at least once
+      const ranked = players.filter(p => p.played > 0);
+      const waiting = players.filter(p => !p.played);
 
+      // Sort: avg guesses asc, then win% desc, then wins desc
+      ranked.sort((a, b) => {
+        const avgA = a.wins ? a.totalGuesses / a.wins : 999;
+        const avgB = b.wins ? b.totalGuesses / b.wins : 999;
+        if (avgA !== avgB) return avgA - avgB;
+        const pctA = a.played ? a.wins / a.played : 0;
+        const pctB = b.played ? b.wins / b.played : 0;
+        if (pctB !== pctA) return pctB - pctA;
+        return b.wins - a.wins;
+      });
+
+      const allPlayers = [...ranked, ...waiting];
       const myName = getUsername();
       const rankEmojis = ['🥇','🥈','🥉'];
 
       let html = '<table class="lb-table"><thead><tr>';
-      html += '<th>#</th><th>Player</th>';
-      if (currentTab === 'streak')       html += '<th style="text-align:center">Streak</th><th style="text-align:center">Best</th><th style="text-align:center">Wins</th>';
-      else if (currentTab === 'winpct')  html += '<th style="text-align:center">Win %</th><th style="text-align:center">Played</th><th style="text-align:center">Wins</th>';
-      else                               html += '<th style="text-align:center">Avg</th><th style="text-align:center">Wins</th><th style="text-align:center">Played</th>';
+      html += '<th>#</th><th>Player</th><th style="text-align:center">Avg</th><th style="text-align:center">Win %</th><th style="text-align:center">Streak</th><th style="text-align:center">Wins</th>';
       html += '</tr></thead><tbody>';
 
-      players.slice(0, 50).forEach((p, i) => {
+      allPlayers.slice(0, 50).forEach((p, i) => {
         const rankClass = i === 0 ? 'gold' : i === 1 ? 'silver' : i === 2 ? 'bronze' : '';
         const rankLabel = i < 3 ? rankEmojis[i] : `${i+1}`;
         const isMe = p.username === myName;
-        const winPct = p.played ? Math.round(p.wins/p.played*100) : 0;
-        const avg = p.wins ? (p.totalGuesses/p.wins).toFixed(1) : '-';
+        const winPct = p.played ? Math.round(p.wins / p.played * 100) : 0;
+        const avg = p.wins ? (p.totalGuesses / p.wins).toFixed(1) : '-';
+        const streak = p.streak || 0;
 
         html += `<tr>
-          <td class="lb-rank ${rankClass}">${rankLabel}</td>
-          <td class="lb-name ${isMe?'me':''}">${p.username}${isMe?' ★':''}</td>`;
-
-        if (currentTab === 'streak') {
-          html += `<td class="lb-stat">${p.streak}</td><td class="lb-stat">${p.best}</td><td class="lb-stat">${p.wins}</td>`;
-        } else if (currentTab === 'winpct') {
-          html += `<td class="lb-stat">${winPct}%</td><td class="lb-stat">${p.played}</td><td class="lb-stat">${p.wins}</td>`;
-        } else {
-          html += `<td class="lb-stat">${avg}</td><td class="lb-stat">${p.wins}</td><td class="lb-stat">${p.played}</td>`;
-        }
-        html += '</tr>';
+          <td class="lb-rank ${rankClass}">${p.played ? rankLabel : '-'}</td>
+          <td class="lb-name ${isMe ? 'me' : ''}">${p.username}${isMe ? ' ★' : ''}</td>
+          <td class="lb-stat">${avg}</td>
+          <td class="lb-stat">${p.played ? winPct + '%' : '-'}</td>
+          <td class="lb-stat">${streak}</td>
+          <td class="lb-stat">${p.wins || 0}</td>
+        </tr>`;
       });
 
       html += '</tbody></table>';
       container.innerHTML = html;
-      document.getElementById('lb-meta').textContent = `${players.length} player${players.length!==1?'s':''} on the board`;
+      document.getElementById('lb-meta').textContent = `${players.length} player${players.length !== 1 ? 's' : ''} on the board`;
 
     } catch(e) {
       container.innerHTML = '<div class="lb-empty">Unable to load scores. Check your connection.</div>';
     }
   }
 
-  // Open leaderboard
+  // Open leaderboard  // Open leaderboard
   document.getElementById('leaderboard-btn').addEventListener('click', () => {
     const username = getUsername();
     if (!username) {
