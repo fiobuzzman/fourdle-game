@@ -1579,46 +1579,8 @@ init();
     document.getElementById('signin-error').textContent = '';
   };
 
-      msg.style.display = 'none';
-      err.textContent = '';
-      document.getElementById('username-recover').style.display = 'none';
-      window.closeOverlay('username-overlay');
-
-      // Submit today's score if they just finished a puzzle
-      if (window._lastGuessCount) {
-        await window.submitScoreToFirebase();
-      }
-
-      // Open leaderboard so they can see their stats
-      setTimeout(() => {
-        window.openOverlay('leaderboard-overlay');
-        renderLeaderboard();
-      }, 300);
-
-    } catch(e) {
-      msg.textContent = 'Something went wrong - please try again.';
-    }
-  });
-
-  // If they came from the leaderboard button, open it now
-    if (window._openLeaderboardAfterUsername) {
-      window._openLeaderboardAfterUsername = false;
-      setTimeout(() => {
-        window.openOverlay('leaderboard-overlay');
-        renderLeaderboard();
-      }, 300);
-    } else {
-      // Submit score then show leaderboard
-      await window.submitScoreToFirebase();
-      setTimeout(() => {
-        window.openOverlay('leaderboard-overlay');
-        renderLeaderboard();
-      }, 400);
-    }
-  });
-
   // ── SUBMIT SCORE ──
-  // Increments Firebase stats by 1 game — never copies full local history
+  // Increments Firebase stats by 1 game - never copies full local history
   window.submitScoreToFirebase = async function() {
     const username = getUsername();
     if (!username) return;
