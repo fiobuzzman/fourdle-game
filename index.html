@@ -428,22 +428,10 @@
     letter-spacing:0.1em;
   }
   #username-overlay input:focus { border-color:var(--correct); }
-  #username-submit {
-    width:100%; padding:12px; background:var(--correct); color:#fff;
-    border:none; border-radius:6px; font-size:0.95rem; font-weight:700;
-    cursor:pointer; font-family:inherit; letter-spacing:0.05em;
-  }
-  #username-submit:hover { opacity:0.9; }
+
+
   #username-error { color:#e53e3e; font-size:0.8rem; text-align:center; min-height:18px; margin-top:-8px; }
 
-  #username-recover {
-    display:none; width:100%; padding:10px; margin-top:6px;
-    background:none; border:2px solid var(--correct); border-radius:6px;
-    color:var(--correct); font-size:0.88rem; font-weight:700;
-    cursor:pointer; font-family:inherit; letter-spacing:0.03em;
-  }
-  #username-recover:hover { background:var(--correct); color:#fff; }
-  #username-recover-msg { display:none; font-size:0.82rem; text-align:center; color:var(--tone2); margin-top:8px; }
 
   .changelog-list {
     list-style: none;
@@ -999,7 +987,7 @@ function loadGameState() {
 
 
 // ── CHANGELOG ──
-const CHANGELOG_VERSION = '1.3';
+const CHANGELOG_VERSION = '1.4';
 function checkChangelog() {
   const seen = localStorage.getItem('fourdle-changelog');
   if (seen !== CHANGELOG_VERSION) {
@@ -1414,17 +1402,18 @@ init();
 </script>
 
 
-<!-- USERNAME PROMPT -->
+<!-- SIGN IN PROMPT -->
 <div class="overlay" id="username-overlay">
   <div class="modal-box">
     <div class="modal-title">Join the Leaderboard 🏆</div>
-    <p style="font-size:0.88rem;text-align:center;color:var(--tone2);margin-bottom:4px">Pick a username to save your score</p>
-    <input type="text" id="username-input" maxlength="12" placeholder="YOUR NAME" autocomplete="off" />
-    <div id="username-error"></div>
-    <button id="username-recover">That's my account — recover it</button>
-    <div id="username-recover-msg"></div>
-    <button id="username-submit">Let's go</button>
-    <p style="font-size:0.75rem;text-align:center;color:var(--tone2);margin-top:12px;cursor:pointer" onclick="skipUsername()">Skip for now</p>
+    <p style="font-size:0.88rem;text-align:center;color:var(--tone2);margin-bottom:20px">Sign in with Google to save your score and appear on the leaderboard. Your name is taken from your Google account.</p>
+    <button id="google-signin-btn" onclick="signInWithGoogle()" style="width:100%;padding:12px;background:#fff;color:#333;border:1px solid #ddd;border-radius:6px;font-size:0.95rem;font-weight:600;cursor:pointer;font-family:inherit;display:flex;align-items:center;justify-content:center;gap:10px">
+      <svg width="18" height="18" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.18 1.48-4.97 2.31-8.16 2.31-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>
+      Sign in with Google
+    </button>
+    <div id="auth-user-info" style="display:none;text-align:center;font-size:0.85rem;color:var(--tone2);margin-top:12px"></div>
+    <div id="signin-error" style="color:#e53e3e;font-size:0.8rem;text-align:center;margin-top:8px;min-height:18px"></div>
+    <p style="font-size:0.75rem;text-align:center;color:var(--tone2);margin-top:16px;cursor:pointer" onclick="skipUsername()">Skip for now</p>
   </div>
 </div>
 
@@ -1433,9 +1422,8 @@ init();
   <div class="modal-box">
     <button class="modal-close" onclick="closeOverlay('leaderboard-overlay')">&#x2715;</button>
     <div class="modal-title">Leaderboard 🏆</div>
-    <div class="lb-view-toggle">
-      <button class="lb-view-btn active" id="lb-btn-all" onclick="switchView('all')">All Time</button>
-      <button class="lb-view-btn" id="lb-btn-tournament" onclick="switchView('tournament')">🏅 August</button>
+    <div style="text-align:center;margin-bottom:4px">
+      <span style="font-size:0.78rem;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;color:var(--correct)">🏅 August Tournament</span>
     </div>
     <div id="lb-content"><div class="lb-loading">Loading...</div></div>
     <p class="lb-meta" id="lb-meta"></p>
@@ -1446,24 +1434,28 @@ init();
 <div class="overlay" id="changelog-overlay">
   <div class="modal-box" id="changelog-modal">
     <button class="modal-close" onclick="closeOverlay('changelog-overlay')">&#x2715;</button>
-    <div class="modal-title">What's New 🛠️</div>
-    <p style="font-size:0.85rem;color:var(--tone2);text-align:center;margin-bottom:14px">Version 1.3 - July 2026</p>
+    <div class="modal-title">👋 Hey Fourdlers!</div>
+    <p style="font-size:0.88rem;font-weight:600;text-align:center;color:var(--tone1);margin-bottom:4px">A message from Fionn</p>
+    <p style="font-size:0.82rem;color:var(--tone2);text-align:center;margin-bottom:14px">August 3rd, 2026</p>
     <ul class="changelog-list">
-      <li>🏆 <strong>Leaderboard is live!</strong> - finish today's puzzle to get on the board and see how you rank against everyone else</li>
-      <li>👤 <strong>Usernames</strong> - pick your name after finishing and claim your spot</li>
-      <li>📊 <strong>Three ways to rank</strong> - streak, win %, or average guesses</li>
-      <li>🧹 <strong>Cleaner word list</strong> - more dodgy words removed (berg, kors, trop... gone)</li>
+      <li>🏅 <strong>The Fourdle August Tournament is officially kicking off today!</strong></li>
+      <li>🔐 <strong>I've reset everyone's scores and switched to Google sign-in.</strong> We were seeing discrepancies so this was the fairest thing to do — no more lost accounts or username issues.</li>
+      <li>📊 <strong>Points are awarded daily based on guesses:</strong> 1 guess = 25pts, 2 = 20pts, 3 = 15pts, 4 = 10pts, 5 = 5pts, 6 = 2pts.</li>
+      <li>🏆 <strong>Tournament runs August 3rd to August 31st.</strong> €5 buy-in, winner takes all.</li>
     </ul>
     <hr class="divider">
-    <p style="text-align:center;font-size:0.82rem;color:var(--tone2)">Finish today's puzzle to join the leaderboard 🙏<br>More updates coming soon!</p>
+    <p style="text-align:center;font-size:0.85rem;color:var(--tone1);font-weight:600">Tap the ⭐ button, sign in with Google, and you're in.</p>
+    <p style="text-align:center;font-size:0.88rem;margin-top:8px">Game on. 🟩🟨⬛</p>
   </div>
 </div>
 
 <!-- FIREBASE SDK -->
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-  import { getFirestore, doc, setDoc, getDoc, collection, getDocs, query, orderBy, limit, where }
+  import { getFirestore, doc, setDoc, getDoc, collection, getDocs, query, limit, where }
     from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
+  import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged }
+    from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
 
   const firebaseConfig = {
     apiKey: "AIzaSyAZyXf8OKw-f4LqTp_sO-aoxV1jmXZF9LU",
@@ -1475,16 +1467,24 @@ init();
   };
 
   const app = initializeApp(firebaseConfig);
-  const db  = getFirestore(app);
+  const db       = getFirestore(app);
+  const auth     = getAuth(app);
+  const provider = new GoogleAuthProvider();
+  const WEB_CLIENT_ID = '884557684621-c2f1pa80uqhh94bnrpvflhdm83kpput5.apps.googleusercontent.com';
+  provider.setCustomParameters({ client_id: WEB_CLIENT_ID });
 
-  // ── USERNAME + DEVICE ID ──
-  // Device ID is a random token stored in localStorage AND in Firebase.
-  // Even if Safari clears the username, we can silently restore it
-  // by matching the device ID against Firebase records.
+  // ── GOOGLE AUTH ──
+  let currentUser = null; // Firebase Auth user object
 
-  function getUsername() { return localStorage.getItem('fourdle-username'); }
+  function getUsername() {
+    // Prefer Google display name, fall back to stored username
+    if (currentUser) return (currentUser.displayName || currentUser.email.split('@')[0]).toUpperCase().replace(/[^A-Z0-9_]/g, '').slice(0, 12);
+    return localStorage.getItem('fourdle-username');
+  }
 
-  function getDeviceId() {
+  function getUserId() {
+    // Use Firebase UID if signed in, otherwise fall back to device ID
+    if (currentUser) return currentUser.uid;
     let id = localStorage.getItem('fourdle-device-id');
     if (!id) {
       id = 'dev_' + Math.random().toString(36).slice(2) + Date.now().toString(36);
@@ -1493,54 +1493,92 @@ init();
     return id;
   }
 
-  // Called on page load — silently restores username if localStorage lost it
-  async function tryRestoreUsername() {
-    if (getUsername()) return; // already have it, nothing to do
-    const deviceId = localStorage.getItem('fourdle-device-id');
-    if (!deviceId) return; // new device, no history to restore
-
+  // Sign in with Google
+  window.signInWithGoogle = async function() {
     try {
-      const snap = await getDocs(query(collection(db, 'players'), where('deviceId', '==', deviceId)));
-      if (!snap.empty) {
-        const data = snap.docs[0].data();
-        localStorage.setItem('fourdle-username', data.username);
-        console.log('[Fourdle] Username silently restored:', data.username);
-      }
+      document.getElementById('google-signin-btn').textContent = 'Signing in...';
+      await signInWithPopup(auth, provider);
+      // onAuthStateChanged handles the rest
     } catch(e) {
-      console.log('[Fourdle] Could not restore username:', e.message);
+      document.getElementById('google-signin-btn').textContent = 'Sign in with Google';
+      document.getElementById('signin-error').textContent = 'Sign in failed - please try again.';
+      console.log('[Fourdle] Sign in error:', e.message);
     }
+  };
+
+  window.signOutGoogle = async function() {
+    await signOut(auth);
+    localStorage.removeItem('fourdle-username');
+    updateAuthUI(null);
+  };
+
+  function updateAuthUI(user) {
+    const btn = document.getElementById('google-signin-btn');
+    const info = document.getElementById('auth-user-info');
+    if (user) {
+      const name = getUsername();
+      if (btn) btn.style.display = 'none';
+      if (info) {
+        info.style.display = 'block';
+        info.innerHTML = `Signed in as <strong>${name}</strong> <span onclick="signOutGoogle()" style="color:var(--correct);cursor:pointer;font-size:0.75rem">(sign out)</span>`;
+      }
+    } else {
+      if (btn) btn.style.display = 'block';
+      if (info) info.style.display = 'none';
+    }
+  }
+
+  // Listen for auth state changes
+  onAuthStateChanged(auth, async (user) => {
+    currentUser = user;
+    updateAuthUI(user);
+
+    if (user) {
+      // Close sign-in overlay if open
+      window.closeOverlay('username-overlay');
+      // If they came from leaderboard button, open it now
+      if (window._openLeaderboardAfterUsername) {
+        window._openLeaderboardAfterUsername = false;
+        setTimeout(() => { window.openOverlay('leaderboard-overlay'); renderLeaderboard(); }, 500);
+      }
+
+      // Ensure player document exists in Firestore
+      const name = getUsername();
+      const ref  = doc(db, 'players', name);
+      const snap = await getDoc(ref);
+      if (!snap.exists()) {
+        await setDoc(ref, {
+          username: name,
+          uid: user.uid,
+          email: user.email,
+          played: 0, wins: 0, streak: 0, best: 0,
+          totalGuesses: 0, lastPuzzle: 0,
+          monthPoints: {},
+          createdAt: Date.now()
+        });
+      } else {
+        // Update UID in case it wasn't stored before
+        await setDoc(ref, { uid: user.uid }, { merge: true });
+      }
+
+      // Submit score if puzzle just completed
+      if (window._pendingScoreSubmit) {
+        window._pendingScoreSubmit = false;
+        await window.submitScoreToFirebase();
+      }
+    }
+  });
+
+  async function tryRestoreUsername() {
+    // With Google Auth this is handled by onAuthStateChanged automatically
   }
 
   window.skipUsername = function() {
     window.closeOverlay('username-overlay');
-    document.getElementById('username-recover').style.display = 'none';
-    document.getElementById('username-recover-msg').style.display = 'none';
-    document.getElementById('username-error').textContent = '';
+    window._pendingScoreSubmit = false;
+    document.getElementById('signin-error').textContent = '';
   };
 
-  // ── ACCOUNT RECOVERY ──
-  document.getElementById('username-recover').addEventListener('click', async () => {
-    const name = document.getElementById('username-recover').dataset.name;
-    const msg  = document.getElementById('username-recover-msg');
-    const err  = document.getElementById('username-error');
-    if (!name) return;
-
-    msg.style.display = 'block';
-    msg.textContent = 'Recovering your account...';
-
-    try {
-      const ref  = doc(db, 'players', name);
-      const snap = await getDoc(ref);
-
-      if (!snap.exists()) {
-        msg.textContent = 'Account not found - try a different name.';
-        return;
-      }
-
-      // Re-link username to this device and update deviceId in Firebase
-      localStorage.setItem('fourdle-username', name);
-      const newDeviceId = getDeviceId();
-      await setDoc(ref, { deviceId: newDeviceId }, { merge: true });
       msg.style.display = 'none';
       err.textContent = '';
       document.getElementById('username-recover').style.display = 'none';
@@ -1562,75 +1600,7 @@ init();
     }
   });
 
-  // ── USERNAME PROFANITY FILTER ──
-  // Normalises leetspeak (3=e, 0=o, 1=i, 4=a, 5=s) before checking
-  const BAD_WORDS = [
-    'anal','anus','arse','ass','bastard','bitch','bollox','bollocks','bollix',
-    'bugger','cock','coon','crap','cuck','cunt','damn','dick','dildo','dyke',
-    'fag','fart','fuck','fucker','fudge','gook','hell','homo','jerk','kike',
-    'knob','mick','milf','muff','nazi','nig','paki','penis','piss','poon',
-    'porn','pube','puke','pussy','puta','rape','scum','sex','shag','shit',
-    'slag','slut','smut','spic','tit','turd','twat','vag','wank','whore','wog'
-  ];
-
-  function containsBadWord(name) {
-    // Normalise leetspeak substitutions
-    const normalised = name
-      .replace(/3/g,'e').replace(/0/g,'o').replace(/1/g,'i')
-      .replace(/4/g,'a').replace(/5/g,'s').replace(/8/g,'b')
-      .replace(/\$/g,'s').replace(/@/g,'a').replace(/!/g,'i');
-    // Only block if bad word is the whole name or a whole word within it
-    // Prevents blocking names like ANALISA, BASSIST, COCKTAIL etc
-    return BAD_WORDS.some(w => {
-      const idx = normalised.indexOf(w);
-      if (idx === -1) return false;
-      const before = idx === 0 || /[^a-z]/i.test(normalised[idx-1]);
-      const after  = idx + w.length === normalised.length || /[^a-z]/i.test(normalised[idx + w.length]);
-      return before && after;
-    });
-  }
-
-  document.getElementById('username-submit').addEventListener('click', async () => {
-    const input = document.getElementById('username-input');
-    const err   = document.getElementById('username-error');
-    const name  = input.value.trim().toUpperCase();
-    err.textContent = '';
-
-    if (name.length < 2)  { err.textContent = "Must be at least 2 characters"; return; }
-    if (name.length > 12) { err.textContent = "Max 12 characters"; return; }
-    if (!/^[A-ZÀ-ÖØ-öø-ÿ]/i.test(name)) { err.textContent = "Must start with a letter"; return; }
-    if (!/^[A-Z0-9_À-ÖØ-öø-ÿ]+$/i.test(name)) { err.textContent = "Letters, numbers and _ only"; return; }
-    if (/^[0-9_]+$/.test(name)) { err.textContent = "Must contain at least one letter"; return; } // accented letters pass
-    if (containsBadWord(name.toLowerCase())) { err.textContent = "That name is not allowed - pick another"; return; }
-
-    // Check not taken
-    const existing = await getDoc(doc(db, 'players', name));
-    if (existing.exists()) {
-      err.textContent = "That name is already taken.";
-      // Show recover option — lets them reclaim their own account
-      const recoverBtn = document.getElementById('username-recover');
-      recoverBtn.style.display = 'block';
-      recoverBtn.dataset.name = name;
-      return;
-    }
-
-    localStorage.setItem('fourdle-username', name);
-    window.closeOverlay('username-overlay');
-
-    // Save initial player doc
-    await setDoc(doc(db, 'players', name), {
-      username: name,
-      played: 0, wins: 0, streak: 0, best: 0,
-      totalGuesses: 0, lastPuzzle: 0,
-      monthPoints: {},
-      deviceId: getDeviceId(),
-      createdAt: Date.now()
-    });
-
-    // Hide recover button when submit succeeds
-    document.getElementById('username-recover').style.display = 'none';
-
-    // If they came from the leaderboard button, open it now
+  // If they came from the leaderboard button, open it now
     if (window._openLeaderboardAfterUsername) {
       window._openLeaderboardAfterUsername = false;
       setTimeout(() => {
@@ -1657,8 +1627,9 @@ init();
     const pn = window.puzzleNumber();
     const won = localStats.lastWinDay === pn;
 
+    // Use username as document key (derived from Google display name)
     const ref = doc(db, 'players', username);
-    const snap = await getDoc(ref);
+    let snap = await getDoc(ref);
 
     // If document was deleted (e.g. after a reset), recreate it fresh first
     if (!snap.exists()) {
@@ -1713,14 +1684,7 @@ init();
   };
 
   // ── LEADERBOARD DISPLAY ──
-  let currentView = 'all';
-
-  window.switchView = function(view) {
-    currentView = view;
-    document.getElementById('lb-btn-all').classList.toggle('active', view === 'all');
-    document.getElementById('lb-btn-tournament').classList.toggle('active', view === 'tournament');
-    renderLeaderboard();
-  };
+  let currentView = 'tournament';
 
   // Get current month key
   function getMonthKey() {
@@ -1733,7 +1697,7 @@ init();
   }
   // Ranked by avg guesses (fewest = best), falls back to win % then wins
   async function renderLeaderboard() {
-    if (currentView === 'tournament') { return renderTournament(); }
+    return renderTournament();
     const container = document.getElementById('lb-content');
     container.innerHTML = '<div class="lb-loading">Loading...</div>';
 
@@ -1765,21 +1729,21 @@ init();
       const rankEmojis = ['🥇','🥈','🥉'];
 
       let html = '<table class="lb-table"><thead><tr>';
-      html += '<th>#</th><th>Player</th><th style="text-align:center">Points</th><th style="text-align:center">Win %</th><th style="text-align:center">Streak</th><th style="text-align:center">Wins</th>';
+      html += '<th>#</th><th>Player</th><th style="text-align:center">Points</th><th style="text-align:center">Avg</th><th style="text-align:center">Streak</th><th style="text-align:center">Wins</th>';
       html += '</tr></thead><tbody>';
 
       allPlayers.slice(0, 50).forEach((p, i) => {
         const rankClass = i === 0 ? 'gold' : i === 1 ? 'silver' : i === 2 ? 'bronze' : '';
         const rankLabel = i < 3 ? rankEmojis[i] : `${i+1}`;
         const isMe = p.username === myName;
-        const winPct = p.played ? Math.round(p.wins / p.played * 100) : 0;
+        const avg = p.wins ? (p.totalGuesses / p.wins).toFixed(1) : '-';
         const streak = p.streak || 0;
 
         html += `<tr>
           <td class="lb-rank ${rankClass}">${p.played ? rankLabel : '-'}</td>
           <td class="lb-name ${isMe ? 'me' : ''}">${p.username}${isMe ? ' ★' : ''}</td>
           <td class="lb-stat" style="font-weight:700;color:var(--correct)">${p.allTimePoints || 0}</td>
-          <td class="lb-stat">${p.played ? winPct + '%' : '-'}</td>
+          <td class="lb-stat">${avg}</td>
           <td class="lb-stat">${streak}</td>
           <td class="lb-stat">${p.wins || 0}</td>
         </tr>`;
@@ -1866,9 +1830,7 @@ init();
 
   // Open leaderboard
   document.getElementById('leaderboard-btn').addEventListener('click', () => {
-    const username = getUsername();
-    if (!username) {
-      // No username yet - prompt them first, then show leaderboard after
+    if (!currentUser) {
       window._openLeaderboardAfterUsername = true;
       setTimeout(() => window.openOverlay('username-overlay'), 100);
     } else {
@@ -1877,20 +1839,23 @@ init();
     }
   });
 
-  // ── STARTUP: try to silently restore username if localStorage lost it ──
+  // ── STARTUP ──
+  // v2.0 migration: clear old username-based auth so everyone signs in with Google
+  const authVersion = localStorage.getItem('fourdle-auth-version');
+  if (authVersion !== '2.0') {
+    localStorage.removeItem('fourdle-username');
+    localStorage.removeItem('fourdle-device-id');
+    localStorage.setItem('fourdle-auth-version', '2.0');
+  }
   tryRestoreUsername();
 
   // ── TRIGGER: listens for puzzle completion event ──
   window.addEventListener('puzzleComplete', async (e) => {
-    console.log('[Fourdle] puzzleComplete event received', e.detail);
     window._lastGuessCount = e.detail.guessCount;
-    const username = getUsername();
-    console.log('[Fourdle] username:', username);
-    if (!username) {
-      console.log('[Fourdle] No username - showing prompt');
+    if (!currentUser) {
+      window._pendingScoreSubmit = true;
       setTimeout(() => window.openOverlay('username-overlay'), 900);
     } else {
-      console.log('[Fourdle] Submitting score for', username);
       await window.submitScoreToFirebase();
     }
   });
