@@ -1462,7 +1462,7 @@ init();
 <!-- FIREBASE SDK -->
 <script type="module">
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
-  import { getFirestore, doc, setDoc, getDoc, collection, getDocs, query, orderBy, limit }
+  import { getFirestore, doc, setDoc, getDoc, collection, getDocs, query, orderBy, limit, where }
     from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
 
   const firebaseConfig = {
@@ -1477,8 +1477,39 @@ init();
   const app = initializeApp(firebaseConfig);
   const db  = getFirestore(app);
 
-  // ── USERNAME ──
+  // ── USERNAME + DEVICE ID ──
+  // Device ID is a random token stored in localStorage AND in Firebase.
+  // Even if Safari clears the username, we can silently restore it
+  // by matching the device ID against Firebase records.
+
   function getUsername() { return localStorage.getItem('fourdle-username'); }
+
+  function getDeviceId() {
+    let id = localStorage.getItem('fourdle-device-id');
+    if (!id) {
+      id = 'dev_' + Math.random().toString(36).slice(2) + Date.now().toString(36);
+      localStorage.setItem('fourdle-device-id', id);
+    }
+    return id;
+  }
+
+  // Called on page load — silently restores username if localStorage lost it
+  async function tryRestoreUsername() {
+    if (getUsername()) return; // already have it, nothing to do
+    const deviceId = localStorage.getItem('fourdle-device-id');
+    if (!deviceId) return; // new device, no history to restore
+
+    try {
+      const snap = await getDocs(query(collection(db, 'players'), where('deviceId', '==', deviceId)));
+      if (!snap.empty) {
+        const data = snap.docs[0].data();
+        localStorage.setItem('fourdle-username', data.username);
+        console.log('[Fourdle] Username silently restored:', data.username);
+      }
+    } catch(e) {
+      console.log('[Fourdle] Could not restore username:', e.message);
+    }
+  }
 
   window.skipUsername = function() {
     window.closeOverlay('username-overlay');
@@ -1506,8 +1537,10 @@ init();
         return;
       }
 
-      // Re-link username to this device
+      // Re-link username to this device and update deviceId in Firebase
       localStorage.setItem('fourdle-username', name);
+      const newDeviceId = getDeviceId();
+      await setDoc(ref, { deviceId: newDeviceId }, { merge: true });
       msg.style.display = 'none';
       err.textContent = '';
       document.getElementById('username-recover').style.display = 'none';
@@ -1590,6 +1623,7 @@ init();
       played: 0, wins: 0, streak: 0, best: 0,
       totalGuesses: 0, lastPuzzle: 0,
       monthPoints: {},
+      deviceId: getDeviceId(),
       createdAt: Date.now()
     });
 
@@ -1633,6 +1667,7 @@ init();
         played: 0, wins: 0, streak: 0, best: 0,
         totalGuesses: 0, lastPuzzle: 0,
         monthPoints: {},
+        deviceId: getDeviceId(),
         createdAt: Date.now()
       });
     }
@@ -1841,6 +1876,9 @@ init();
       renderLeaderboard();
     }
   });
+
+  // ── STARTUP: try to silently restore username if localStorage lost it ──
+  tryRestoreUsername();
 
   // ── TRIGGER: listens for puzzle completion event ──
   window.addEventListener('puzzleComplete', async (e) => {
