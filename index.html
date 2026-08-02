@@ -368,6 +368,39 @@
   .eg-tile.a { background: var(--absent);  color: #fff; border: none; }
 
 
+
+  /* ── TOURNAMENT ── */
+  .lb-view-toggle { display:flex; gap:8px; margin-bottom:16px; }
+  .lb-view-btn {
+    flex:1; padding:8px; font-size:0.78rem; font-weight:700;
+    text-transform:uppercase; letter-spacing:0.06em;
+    background:none; border:2px solid var(--divider);
+    color:var(--tone2); cursor:pointer; border-radius:6px;
+    transition:all 0.15s; font-family:inherit;
+  }
+  .lb-view-btn.active { border-color:var(--correct); color:var(--correct); background:none; }
+  .tournament-header {
+    text-align:center; margin-bottom:12px;
+  }
+  .tournament-header .t-month {
+    font-size:0.95rem; font-weight:700; color:var(--tone1);
+  }
+  .tournament-header .t-sub {
+    font-size:0.75rem; color:var(--tone2); margin-top:2px;
+  }
+  .points-key {
+    display:flex; flex-wrap:wrap; gap:4px;
+    margin-bottom:14px; justify-content:center;
+  }
+  .points-pill {
+    font-size:0.7rem; padding:3px 8px; border-radius:12px;
+    background:var(--absent); color:#fff; font-weight:600;
+  }
+  .points-pill.gold { background:var(--correct); }
+  .hall-of-fame { margin-top:12px; }
+  .hof-title { font-size:0.75rem; font-weight:700; text-transform:uppercase; letter-spacing:0.08em; color:var(--tone2); text-align:center; margin-bottom:8px; }
+  .hof-entry { display:flex; justify-content:space-between; align-items:center; padding:6px 0; border-bottom:1px solid var(--divider); font-size:0.85rem; }
+  .hof-entry:last-child { border-bottom:none; }
   /* ── LEADERBOARD ── */
   .lb-meta { font-size:0.78rem; color:var(--tone2); text-align:center; margin-bottom:14px; }
   .lb-table { width:100%; border-collapse:collapse; font-size:0.85rem; }
@@ -402,6 +435,16 @@
   }
   #username-submit:hover { opacity:0.9; }
   #username-error { color:#e53e3e; font-size:0.8rem; text-align:center; min-height:18px; margin-top:-8px; }
+
+  #username-recover {
+    display:none; width:100%; padding:10px; margin-top:6px;
+    background:none; border:2px solid var(--correct); border-radius:6px;
+    color:var(--correct); font-size:0.88rem; font-weight:700;
+    cursor:pointer; font-family:inherit; letter-spacing:0.03em;
+  }
+  #username-recover:hover { background:var(--correct); color:#fff; }
+  #username-recover-msg { display:none; font-size:0.82rem; text-align:center; color:var(--tone2); margin-top:8px; }
+
   .changelog-list {
     list-style: none;
     padding: 0;
@@ -1378,6 +1421,8 @@ init();
     <p style="font-size:0.88rem;text-align:center;color:var(--tone2);margin-bottom:4px">Pick a username to save your score</p>
     <input type="text" id="username-input" maxlength="12" placeholder="YOUR NAME" autocomplete="off" />
     <div id="username-error"></div>
+    <button id="username-recover">That's my account — recover it</button>
+    <div id="username-recover-msg"></div>
     <button id="username-submit">Let's go</button>
     <p style="font-size:0.75rem;text-align:center;color:var(--tone2);margin-top:12px;cursor:pointer" onclick="skipUsername()">Skip for now</p>
   </div>
@@ -1388,7 +1433,10 @@ init();
   <div class="modal-box">
     <button class="modal-close" onclick="closeOverlay('leaderboard-overlay')">&#x2715;</button>
     <div class="modal-title">Leaderboard 🏆</div>
-
+    <div class="lb-view-toggle">
+      <button class="lb-view-btn active" id="lb-btn-all" onclick="switchView('all')">All Time</button>
+      <button class="lb-view-btn" id="lb-btn-tournament" onclick="switchView('tournament')">🏅 August</button>
+    </div>
     <div id="lb-content"><div class="lb-loading">Loading...</div></div>
     <p class="lb-meta" id="lb-meta"></p>
   </div>
@@ -1434,7 +1482,52 @@ init();
 
   window.skipUsername = function() {
     window.closeOverlay('username-overlay');
+    document.getElementById('username-recover').style.display = 'none';
+    document.getElementById('username-recover-msg').style.display = 'none';
+    document.getElementById('username-error').textContent = '';
   };
+
+  // ── ACCOUNT RECOVERY ──
+  document.getElementById('username-recover').addEventListener('click', async () => {
+    const name = document.getElementById('username-recover').dataset.name;
+    const msg  = document.getElementById('username-recover-msg');
+    const err  = document.getElementById('username-error');
+    if (!name) return;
+
+    msg.style.display = 'block';
+    msg.textContent = 'Recovering your account...';
+
+    try {
+      const ref  = doc(db, 'players', name);
+      const snap = await getDoc(ref);
+
+      if (!snap.exists()) {
+        msg.textContent = 'Account not found - try a different name.';
+        return;
+      }
+
+      // Re-link username to this device
+      localStorage.setItem('fourdle-username', name);
+      msg.style.display = 'none';
+      err.textContent = '';
+      document.getElementById('username-recover').style.display = 'none';
+      window.closeOverlay('username-overlay');
+
+      // Submit today's score if they just finished a puzzle
+      if (window._lastGuessCount) {
+        await window.submitScoreToFirebase();
+      }
+
+      // Open leaderboard so they can see their stats
+      setTimeout(() => {
+        window.openOverlay('leaderboard-overlay');
+        renderLeaderboard();
+      }, 300);
+
+    } catch(e) {
+      msg.textContent = 'Something went wrong - please try again.';
+    }
+  });
 
   // ── USERNAME PROFANITY FILTER ──
   // Normalises leetspeak (3=e, 0=o, 1=i, 4=a, 5=s) before checking
@@ -1453,7 +1546,15 @@ init();
       .replace(/3/g,'e').replace(/0/g,'o').replace(/1/g,'i')
       .replace(/4/g,'a').replace(/5/g,'s').replace(/8/g,'b')
       .replace(/\$/g,'s').replace(/@/g,'a').replace(/!/g,'i');
-    return BAD_WORDS.some(w => normalised.includes(w));
+    // Only block if bad word is the whole name or a whole word within it
+    // Prevents blocking names like ANALISA, BASSIST, COCKTAIL etc
+    return BAD_WORDS.some(w => {
+      const idx = normalised.indexOf(w);
+      if (idx === -1) return false;
+      const before = idx === 0 || /[^a-z]/i.test(normalised[idx-1]);
+      const after  = idx + w.length === normalised.length || /[^a-z]/i.test(normalised[idx + w.length]);
+      return before && after;
+    });
   }
 
   document.getElementById('username-submit').addEventListener('click', async () => {
@@ -1471,7 +1572,14 @@ init();
 
     // Check not taken
     const existing = await getDoc(doc(db, 'players', name));
-    if (existing.exists()) { err.textContent = "That name is taken - try another"; return; }
+    if (existing.exists()) {
+      err.textContent = "That name is already taken.";
+      // Show recover option — lets them reclaim their own account
+      const recoverBtn = document.getElementById('username-recover');
+      recoverBtn.style.display = 'block';
+      recoverBtn.dataset.name = name;
+      return;
+    }
 
     localStorage.setItem('fourdle-username', name);
     window.closeOverlay('username-overlay');
@@ -1481,8 +1589,12 @@ init();
       username: name,
       played: 0, wins: 0, streak: 0, best: 0,
       totalGuesses: 0, lastPuzzle: 0,
+      monthPoints: {},
       createdAt: Date.now()
     });
+
+    // Hide recover button when submit succeeds
+    document.getElementById('username-recover').style.display = 'none';
 
     // If they came from the leaderboard button, open it now
     if (window._openLeaderboardAfterUsername) {
@@ -1520,6 +1632,7 @@ init();
         username,
         played: 0, wins: 0, streak: 0, best: 0,
         totalGuesses: 0, lastPuzzle: 0,
+        monthPoints: {},
         createdAt: Date.now()
       });
     }
@@ -1540,6 +1653,17 @@ init();
       newStreak = 0;
     }
 
+    // Points system: 1=25, 2=20, 3=15, 4=10, 5=5, 6=2, fail=0
+    const POINTS_MAP = [0, 25, 20, 15, 10, 5, 2];
+    const guessCount = window._lastGuessCount || 0;
+    const pointsEarned = won ? (POINTS_MAP[guessCount] || 0) : 0;
+
+    // Monthly tournament key e.g. "aug2026"
+    const now = new Date();
+    const monthKey = now.toLocaleString('en', {month:'short'}).toLowerCase() + now.getFullYear();
+    const monthPoints = data.monthPoints || {};
+    monthPoints[monthKey] = (monthPoints[monthKey] || 0) + pointsEarned;
+
     await setDoc(ref, {
       username,
       played:       (data.played || 0) + 1,
@@ -1548,14 +1672,33 @@ init();
       best:         newBest,
       totalGuesses: (data.totalGuesses || 0) + (window._lastGuessCount || 0),
       lastPuzzle:   pn,
+      monthPoints,
       updatedAt:    Date.now()
     });
   };
 
   // ── LEADERBOARD DISPLAY ──
-  // ── LEADERBOARD DISPLAY ──
+  let currentView = 'all';
+
+  window.switchView = function(view) {
+    currentView = view;
+    document.getElementById('lb-btn-all').classList.toggle('active', view === 'all');
+    document.getElementById('lb-btn-tournament').classList.toggle('active', view === 'tournament');
+    renderLeaderboard();
+  };
+
+  // Get current month key
+  function getMonthKey() {
+    const now = new Date();
+    return now.toLocaleString('en', {month:'short'}).toLowerCase() + now.getFullYear();
+  }
+
+  function getMonthName() {
+    return new Date().toLocaleString('en', {month:'long', year:'numeric'});
+  }
   // Ranked by avg guesses (fewest = best), falls back to win % then wins
   async function renderLeaderboard() {
+    if (currentView === 'tournament') { return renderTournament(); }
     const container = document.getElementById('lb-content');
     container.innerHTML = '<div class="lb-loading">Loading...</div>';
 
@@ -1569,27 +1712,25 @@ init();
         return;
       }
 
-      // Only rank players who have played at least once
-      const ranked = players.filter(p => p.played > 0);
-      const waiting = players.filter(p => !p.played);
-
-      // Sort: avg guesses asc, then win% desc, then wins desc
-      ranked.sort((a, b) => {
-        const avgA = a.wins ? a.totalGuesses / a.wins : 999;
-        const avgB = b.wins ? b.totalGuesses / b.wins : 999;
-        if (avgA !== avgB) return avgA - avgB;
-        const pctA = a.played ? a.wins / a.played : 0;
-        const pctB = b.played ? b.wins / b.played : 0;
-        if (pctB !== pctA) return pctB - pctA;
-        return b.wins - a.wins;
+      // Calculate total all-time points from all months
+      const withPoints = players.map(p => {
+        const allPts = Object.values(p.monthPoints || {}).reduce((s, v) => s + v, 0);
+        return { ...p, allTimePoints: allPts };
       });
+
+      // Only rank players who have played at least once
+      const ranked = withPoints.filter(p => p.played > 0);
+      const waiting = withPoints.filter(p => !p.played);
+
+      // Sort: total points desc, then wins desc
+      ranked.sort((a, b) => (b.allTimePoints - a.allTimePoints) || (b.wins - a.wins));
 
       const allPlayers = [...ranked, ...waiting];
       const myName = getUsername();
       const rankEmojis = ['🥇','🥈','🥉'];
 
       let html = '<table class="lb-table"><thead><tr>';
-      html += '<th>#</th><th>Player</th><th style="text-align:center">Avg</th><th style="text-align:center">Win %</th><th style="text-align:center">Streak</th><th style="text-align:center">Wins</th>';
+      html += '<th>#</th><th>Player</th><th style="text-align:center">Points</th><th style="text-align:center">Win %</th><th style="text-align:center">Streak</th><th style="text-align:center">Wins</th>';
       html += '</tr></thead><tbody>';
 
       allPlayers.slice(0, 50).forEach((p, i) => {
@@ -1597,13 +1738,12 @@ init();
         const rankLabel = i < 3 ? rankEmojis[i] : `${i+1}`;
         const isMe = p.username === myName;
         const winPct = p.played ? Math.round(p.wins / p.played * 100) : 0;
-        const avg = p.wins ? (p.totalGuesses / p.wins).toFixed(1) : '-';
         const streak = p.streak || 0;
 
         html += `<tr>
           <td class="lb-rank ${rankClass}">${p.played ? rankLabel : '-'}</td>
           <td class="lb-name ${isMe ? 'me' : ''}">${p.username}${isMe ? ' ★' : ''}</td>
-          <td class="lb-stat">${avg}</td>
+          <td class="lb-stat" style="font-weight:700;color:var(--correct)">${p.allTimePoints || 0}</td>
           <td class="lb-stat">${p.played ? winPct + '%' : '-'}</td>
           <td class="lb-stat">${streak}</td>
           <td class="lb-stat">${p.wins || 0}</td>
@@ -1619,7 +1759,77 @@ init();
     }
   }
 
-  // Open leaderboard  // Open leaderboard
+  // Open leaderboard  // ── TOURNAMENT DISPLAY ──
+  async function renderTournament() {
+    const container = document.getElementById('lb-content');
+    const meta = document.getElementById('lb-meta');
+    container.innerHTML = '<div class="lb-loading">Loading...</div>';
+
+    try {
+      const snap = await getDocs(query(collection(db, 'players'), limit(200)));
+      let players = [];
+      snap.forEach(d => players.push(d.data()));
+
+      const monthKey = getMonthKey();
+      const POINTS_MAP = { 1:25, 2:20, 3:15, 4:10, 5:5, 6:2 };
+
+      // Filter to players with points this month
+      let ranked = players
+        .map(p => ({ ...p, pts: (p.monthPoints || {})[monthKey] || 0 }))
+        .filter(p => p.pts > 0)
+        .sort((a,b) => b.pts - a.pts || b.wins - a.wins);
+
+      const myName = getUsername();
+      const rankEmojis = ['🥇','🥈','🥉'];
+
+      let html = `<div class="tournament-header">
+        <div class="t-month">${getMonthName()} Tournament</div>
+        <div class="t-sub">Points reset on the 1st of each month</div>
+      </div>`;
+
+      html += `<div class="points-key">
+        <span class="points-pill gold">1 guess = 25pts</span>
+        <span class="points-pill">2 = 20pts</span>
+        <span class="points-pill">3 = 15pts</span>
+        <span class="points-pill">4 = 10pts</span>
+        <span class="points-pill">5 = 5pts</span>
+        <span class="points-pill">6 = 2pts</span>
+      </div>`;
+
+      if (ranked.length === 0) {
+        html += '<div class="lb-empty">No tournament scores yet today - play to get on the board!</div>';
+        container.innerHTML = html;
+        meta.textContent = '';
+        return;
+      }
+
+      html += '<table class="lb-table"><thead><tr>';
+      html += '<th>#</th><th>Player</th><th style="text-align:center">Points</th><th style="text-align:center">Wins</th><th style="text-align:center">Played</th>';
+      html += '</tr></thead><tbody>';
+
+      ranked.forEach((p, i) => {
+        const rankClass = i === 0 ? 'gold' : i === 1 ? 'silver' : i === 2 ? 'bronze' : '';
+        const rankLabel = i < 3 ? rankEmojis[i] : `${i+1}`;
+        const isMe = p.username === myName;
+        html += `<tr>
+          <td class="lb-rank ${rankClass}">${rankLabel}</td>
+          <td class="lb-name ${isMe ? 'me' : ''}">${p.username}${isMe ? ' ★' : ''}</td>
+          <td class="lb-stat" style="font-weight:700;color:var(--correct)">${p.pts}</td>
+          <td class="lb-stat">${p.wins || 0}</td>
+          <td class="lb-stat">${p.played || 0}</td>
+        </tr>`;
+      });
+
+      html += '</tbody></table>';
+      container.innerHTML = html;
+      meta.textContent = `${ranked.length} player${ranked.length !== 1 ? 's' : ''} in the tournament`;
+
+    } catch(e) {
+      container.innerHTML = '<div class="lb-empty">Unable to load tournament. Check your connection.</div>';
+    }
+  }
+
+  // Open leaderboard
   document.getElementById('leaderboard-btn').addEventListener('click', () => {
     const username = getUsername();
     if (!username) {
