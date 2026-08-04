@@ -1451,7 +1451,7 @@ init();
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
   import { getFirestore, doc, setDoc, getDoc, collection, getDocs, query, limit, where }
     from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
-  import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged }
+  import { getAuth, GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult, signOut, onAuthStateChanged }
     from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
 
   const firebaseConfig = {
@@ -1498,10 +1498,18 @@ init();
   // Sign in with Google
   window.signInWithGoogle = async function() {
     try {
+      document.getElementById('google-signin-btn').disabled = true;
       document.getElementById('google-signin-btn').textContent = 'Signing in...';
-      await signInWithPopup(auth, provider);
-      // onAuthStateChanged handles the rest
+      // Use redirect on mobile (more reliable on iOS Safari), popup on desktop
+      const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+      if (isMobile) {
+        await signInWithRedirect(auth, provider);
+        // Page will redirect to Google then come back
+      } else {
+        await signInWithPopup(auth, provider);
+      }
     } catch(e) {
+      document.getElementById('google-signin-btn').disabled = false;
       document.getElementById('google-signin-btn').textContent = 'Sign in with Google';
       document.getElementById('signin-error').textContent = 'Sign in failed - please try again.';
       console.log('[Fourdle] Sign in error:', e.message);
@@ -1529,6 +1537,15 @@ init();
       if (info) info.style.display = 'none';
     }
   }
+
+  // Handle redirect result when returning from Google sign-in
+  getRedirectResult(auth).then(async (result) => {
+    if (result?.user) {
+      console.log('[Fourdle] Redirect sign-in successful:', result.user.displayName);
+    }
+  }).catch((e) => {
+    console.log('[Fourdle] Redirect result error:', e.message);
+  });
 
   // Listen for auth state changes
   onAuthStateChanged(auth, async (user) => {
@@ -1814,10 +1831,21 @@ init();
   }
   tryRestoreUsername();
 
+  // Wait for Firebase auth to restore session before allowing score submission
+  // This prevents the race condition where puzzle completes before auth is ready
+  window._authReady = new Promise(resolve => {
+    const unsub = onAuthStateChanged(auth, (user) => {
+      unsub(); // only need first emission
+      resolve(user);
+    });
+  });
+
   // ── TRIGGER: listens for puzzle completion event ──
   window.addEventListener('puzzleComplete', async (e) => {
     window._lastGuessCount = e.detail.guessCount;
-    if (!currentUser) {
+    // Wait for auth to be ready before deciding whether user is signed in
+    const user = await window._authReady;
+    if (!user) {
       window._pendingScoreSubmit = true;
       setTimeout(() => window.openOverlay('username-overlay'), 900);
     } else {
