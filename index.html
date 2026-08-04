@@ -987,7 +987,7 @@ function loadGameState() {
 
 
 // ── CHANGELOG ──
-const CHANGELOG_VERSION = '1.4';
+const CHANGELOG_VERSION = '1.5';
 function checkChangelog() {
   const seen = localStorage.getItem('fourdle-changelog');
   if (seen !== CHANGELOG_VERSION) {
@@ -1434,18 +1434,15 @@ init();
 <div class="overlay" id="changelog-overlay">
   <div class="modal-box" id="changelog-modal">
     <button class="modal-close" onclick="closeOverlay('changelog-overlay')">&#x2715;</button>
-    <div class="modal-title">👋 Hey Fourdlers!</div>
-    <p style="font-size:0.88rem;font-weight:600;text-align:center;color:var(--tone1);margin-bottom:4px">A message from Fionn</p>
-    <p style="font-size:0.82rem;color:var(--tone2);text-align:center;margin-bottom:14px">August 3rd, 2026</p>
+    <div class="modal-title">August Tournament 🏅</div>
+    <p style="font-size:0.85rem;color:var(--tone2);text-align:center;margin-bottom:14px">A quick update from Fionn</p>
     <ul class="changelog-list">
-      <li>🏅 <strong>The Fourdle August Tournament is officially kicking off today!</strong></li>
-      <li>🔐 <strong>I've reset everyone's scores and switched to Google sign-in.</strong> We were seeing discrepancies so this was the fairest thing to do — no more lost accounts or username issues.</li>
-      <li>📊 <strong>Points are awarded daily based on guesses:</strong> 1 guess = 25pts, 2 = 20pts, 3 = 15pts, 4 = 10pts, 5 = 5pts, 6 = 2pts.</li>
-      <li>🏆 <strong>Tournament runs August 3rd to August 31st.</strong> €5 buy-in, winner takes all.</li>
+      <li>🐛 <strong>Bug fixes</strong> - a few teething issues with the leaderboard have been sorted.</li>
+      <li>👤 <strong>Names</strong> - your first name from Google is now used as your display name on the leaderboard.</li>
+      <li>🏆 <strong>Tournament still running</strong> - August 3rd to 31st, €5 buy-in, winner takes all. Points update daily.</li>
     </ul>
     <hr class="divider">
-    <p style="text-align:center;font-size:0.85rem;color:var(--tone1);font-weight:600">Tap the ⭐ button, sign in with Google, and you're in.</p>
-    <p style="text-align:center;font-size:0.88rem;margin-top:8px">Game on. 🟩🟨⬛</p>
+    <p style="text-align:center;font-size:0.85rem;color:var(--tone2)">Good luck everyone! 🟩🟨⬛</p>
   </div>
 </div>
 
@@ -1478,7 +1475,12 @@ init();
 
   function getUsername() {
     // Prefer Google display name, fall back to stored username
-    if (currentUser) return (currentUser.displayName || currentUser.email.split('@')[0]).toUpperCase().replace(/[^A-Z0-9_]/g, '').slice(0, 12);
+    if (currentUser) {
+      // Use first name only from Google to keep it short and clean
+      const raw = currentUser.displayName || currentUser.email.split('@')[0];
+      const firstName = raw.split(' ')[0]; // take first name only
+      return firstName.toUpperCase().replace(/[^A-ZÀ-ÿ0-9_]/g, '').slice(0, 12);
+    }
     return localStorage.getItem('fourdle-username');
   }
 
