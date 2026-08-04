@@ -1544,9 +1544,9 @@ init();
         setTimeout(() => { window.openOverlay('leaderboard-overlay'); renderLeaderboard(); }, 500);
       }
 
-      // Ensure player document exists in Firestore
+      // Ensure player document exists in Firestore - keyed by UID, not username
       const name = getUsername();
-      const ref  = doc(db, 'players', name);
+      const ref  = doc(db, 'players', user.uid);
       const snap = await getDoc(ref);
       if (!snap.exists()) {
         await setDoc(ref, {
@@ -1559,8 +1559,8 @@ init();
           createdAt: Date.now()
         });
       } else {
-        // Update UID in case it wasn't stored before
-        await setDoc(ref, { uid: user.uid }, { merge: true });
+        // Update username in case display name changed
+        await setDoc(ref, { username: name }, { merge: true });
       }
 
       // Submit score if puzzle just completed
@@ -1591,18 +1591,19 @@ init();
     const pn = window.puzzleNumber();
     const won = localStats.lastWinDay === pn;
 
-    // Use username as document key (derived from Google display name)
-    const ref = doc(db, 'players', username);
+    // Use Firebase UID as document key - immune to username changes
+    if (!currentUser) return;
+    const ref = doc(db, 'players', currentUser.uid);
     let snap = await getDoc(ref);
 
     // If document was deleted (e.g. after a reset), recreate it fresh first
     if (!snap.exists()) {
       await setDoc(ref, {
         username,
+        uid: currentUser.uid,
         played: 0, wins: 0, streak: 0, best: 0,
         totalGuesses: 0, lastPuzzle: 0,
         monthPoints: {},
-        deviceId: getDeviceId(),
         createdAt: Date.now()
       });
     }
