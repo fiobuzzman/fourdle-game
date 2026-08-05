@@ -1451,7 +1451,7 @@ init();
   import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
   import { getFirestore, doc, setDoc, getDoc, collection, getDocs, query, limit, where }
     from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
-  import { getAuth, GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult, signOut, onAuthStateChanged }
+  import { getAuth, GoogleAuthProvider, signInWithPopup, signInWithRedirect, getRedirectResult, signOut, onAuthStateChanged, browserLocalPersistence, setPersistence }
     from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
 
   const firebaseConfig = {
@@ -1469,6 +1469,11 @@ init();
   const provider = new GoogleAuthProvider();
   const WEB_CLIENT_ID = '884557684621-c2f1pa80uqhh94bnrpvflhdm83kpput5.apps.googleusercontent.com';
   provider.setCustomParameters({ client_id: WEB_CLIENT_ID });
+
+  // Set persistence to LOCAL so sign-in survives browser restarts on iOS
+  setPersistence(auth, browserLocalPersistence).catch(e => {
+    console.log('[Fourdle] Persistence error:', e.message);
+  });
 
   // ── GOOGLE AUTH ──
   let currentUser = null; // Firebase Auth user object
@@ -1497,22 +1502,23 @@ init();
 
   // Sign in with Google
   window.signInWithGoogle = async function() {
+    const btn = document.getElementById('google-signin-btn');
+    const err = document.getElementById('signin-error');
     try {
-      document.getElementById('google-signin-btn').disabled = true;
-      document.getElementById('google-signin-btn').textContent = 'Signing in...';
-      // Use redirect on mobile (more reliable on iOS Safari), popup on desktop
-      const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-      if (isMobile) {
-        await signInWithRedirect(auth, provider);
-        // Page will redirect to Google then come back
-      } else {
-        await signInWithPopup(auth, provider);
-      }
+      btn.disabled = true;
+      btn.textContent = 'Signing in...';
+      err.textContent = '';
+      await signInWithPopup(auth, provider);
     } catch(e) {
-      document.getElementById('google-signin-btn').disabled = false;
-      document.getElementById('google-signin-btn').textContent = 'Sign in with Google';
-      document.getElementById('signin-error').textContent = 'Sign in failed - please try again.';
-      console.log('[Fourdle] Sign in error:', e.message);
+      btn.disabled = false;
+      btn.innerHTML = '<svg width="18" height="18" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.18 1.48-4.97 2.31-8.16 2.31-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg> Sign in with Google';
+      if (e.code === 'auth/popup-blocked') {
+        err.textContent = 'Popup blocked - please allow popups for this site and try again.';
+      } else if (e.code === 'auth/cancelled-popup-request' || e.code === 'auth/popup-closed-by-user') {
+        err.textContent = 'Sign in cancelled - tap the button to try again.';
+      } else {
+        err.textContent = 'Sign in failed - please try again.';
+      }
     }
   };
 
@@ -1686,7 +1692,14 @@ init();
     try {
       const snap = await getDocs(query(collection(db, 'players'), limit(200)));
       let players = [];
-      snap.forEach(d => players.push(d.data()));
+      snap.forEach(d => {
+        const data = d.data();
+        // Only include UID-keyed documents (they have a uid field matching the doc ID)
+        // Skip old username-keyed documents which cause duplicates
+        if (data.uid && d.id === data.uid) {
+          players.push(data);
+        }
+      });
 
       if (players.length === 0) {
         container.innerHTML = '<div class="lb-empty">No scores yet - finish a puzzle to appear here!</div>';
@@ -1749,7 +1762,14 @@ init();
     try {
       const snap = await getDocs(query(collection(db, 'players'), limit(200)));
       let players = [];
-      snap.forEach(d => players.push(d.data()));
+      snap.forEach(d => {
+        const data = d.data();
+        // Only include UID-keyed documents (they have a uid field matching the doc ID)
+        // Skip old username-keyed documents which cause duplicates
+        if (data.uid && d.id === data.uid) {
+          players.push(data);
+        }
+      });
 
       const monthKey = getMonthKey();
       const POINTS_MAP = { 1:25, 2:20, 3:15, 4:10, 5:5, 6:2 };
