@@ -1693,11 +1693,10 @@ init();
       const snap = await getDocs(query(collection(db, 'players'), limit(200)));
       let players = [];
       snap.forEach(d => {
-        const data = d.data();
-        // Only include UID-keyed documents (they have a uid field matching the doc ID)
-        // Skip old username-keyed documents which cause duplicates
-        if (data.uid && d.id === data.uid) {
-          players.push(data);
+        // Only show UID-keyed documents - UIDs are always 28+ chars
+        // This filters out all old username-keyed duplicates automatically
+        if (d.id.length >= 20) {
+          players.push(d.data());
         }
       });
 
@@ -1763,11 +1762,10 @@ init();
       const snap = await getDocs(query(collection(db, 'players'), limit(200)));
       let players = [];
       snap.forEach(d => {
-        const data = d.data();
-        // Only include UID-keyed documents (they have a uid field matching the doc ID)
-        // Skip old username-keyed documents which cause duplicates
-        if (data.uid && d.id === data.uid) {
-          players.push(data);
+        // Only show UID-keyed documents - UIDs are always 28+ chars
+        // This filters out all old username-keyed duplicates automatically
+        if (d.id.length >= 20) {
+          players.push(d.data());
         }
       });
 
@@ -1841,6 +1839,65 @@ init();
     }
   });
 
+
+  // ── ONE-TIME DATA MIGRATION ──
+  // Fixes corrupted/duplicate scores from the username->UID migration
+  // Runs once per device, keyed by version
+  async function runDataMigration() {
+    if (localStorage.getItem('fourdle-migration-v2')) return;
+    localStorage.setItem('fourdle-migration-v2', '1');
+
+    const DATA_FIX = {
+      // Points include today (puzzle 58): NOIRIN+15, EANNA+15, OISIN+15, SONA+15,
+      // FIONN+10, PETER+10, MARK+5, CONOR+2, JACK+2, AMY+0
+      '6xWpuZI9itScsYcmMPpJb1faL0C3': { username: 'AMY',    played: 2, wins: 1, streak: 0, best: 1, totalGuesses: 12, monthPoints: { 'aug2026': 5  }, lastPuzzle: 58 },
+      '8LgAC6UBmUVhivDIGXh9EKPQB3W2': { username: 'NUALA',  played: 1, wins: 1, streak: 1, best: 1, totalGuesses: 3,  monthPoints: { 'aug2026': 15 }, lastPuzzle: 58 },
+      '8oc8mrT557Tz8SOBM9j16ZLcoth2': { username: 'NIAMH',  played: 2, wins: 2, streak: 2, best: 2, totalGuesses: 10, monthPoints: { 'aug2026': 10 }, lastPuzzle: 57 },
+      'Gf2W7gphUbYr7N87nIHysYwKVcq2': { username: 'MARK',   played: 4, wins: 4, streak: 2, best: 2, totalGuesses: 21, monthPoints: { 'aug2026': 22 }, lastPuzzle: 58 },
+      'HgZip7EgqhMaKAihpfbVECKzp9I2': { username: 'ÉANNA', played: 4, wins: 4, streak: 4, best: 4, totalGuesses: 12, monthPoints: { 'aug2026': 60 }, lastPuzzle: 58 },
+      'LnlnalwA6aSqRR6veLcEXnNxfyq2': { username: 'NOIRIN', played: 3, wins: 3, streak: 3, best: 3, totalGuesses: 9,  monthPoints: { 'aug2026': 40 }, lastPuzzle: 58 },
+      'm8NEjBnIiuhT0q58twoG9DieZoS2': { username: 'FIONN',  played: 4, wins: 3, streak: 1, best: 2, totalGuesses: 22, monthPoints: { 'aug2026': 22 }, lastPuzzle: 58 },
+      'YzDiCh6JuMPpJNKhj1MMqQNlLJh1': { username: 'PJ',     played: 3, wins: 3, streak: 2, best: 4, totalGuesses: 14, monthPoints: { 'aug2026': 25 }, lastPuzzle: 58 },
+      'Z3OdjWxbCjOIMwRAqYSP1lvThNt1': { username: 'OISIN',  played: 3, wins: 3, streak: 2, best: 2, totalGuesses: 11, monthPoints: { 'aug2026': 35 }, lastPuzzle: 58 },
+      'ZmdN4TATW2W4J4wUjfiRfh73kVn2': { username: 'SONA',   played: 3, wins: 3, streak: 3, best: 3, totalGuesses: 11, monthPoints: { 'aug2026': 37 }, lastPuzzle: 58 },
+      'gvq6ISfG8oMsOmJ5MHDknij98iW2': { username: 'CONOR',  played: 4, wins: 3, streak: 1, best: 2, totalGuesses: 22, monthPoints: { 'aug2026': 14 }, lastPuzzle: 58 },
+      'nwXcFqHzrpggCdG4nGBKrnn4xcn1': { username: 'PETER',  played: 3, wins: 3, streak: 2, best: 2, totalGuesses: 13, monthPoints: { 'aug2026': 35 }, lastPuzzle: 58 },
+    };
+
+    try {
+      const pn = window.puzzleNumber ? window.puzzleNumber() : 58;
+      const updates = [];
+      for (const [uid, fixData] of Object.entries(DATA_FIX)) {
+        const ref = doc(db, 'players', uid);
+        const snap = await getDoc(ref);
+        if (snap.exists()) {
+          const current = snap.data();
+          // Don't overwrite if player has already played today
+          if (current.lastPuzzle >= pn) {
+            console.log('[Fourdle] Skipping migration for', fixData.username, '- already played today');
+            continue;
+          }
+          // Merge: take highest points between current and fix
+          const currentPts = (current.monthPoints || {})['aug2026'] || 0;
+          const fixPts = (fixData.monthPoints || {})['aug2026'] || 0;
+          const mergedPts = Math.max(currentPts, fixPts);
+          updates.push(setDoc(ref, {
+            ...fixData,
+            monthPoints: { 'aug2026': mergedPts },
+            migratedAt: Date.now()
+          }));
+        } else {
+          updates.push(setDoc(ref, { ...fixData, migratedAt: Date.now() }));
+        }
+      }
+      await Promise.all(updates);
+      console.log('[Fourdle] Data migration complete');
+    } catch(e) {
+      console.log('[Fourdle] Migration error:', e.message);
+      localStorage.removeItem('fourdle-migration-v1');
+    }
+  }
+
   // ── STARTUP ──
   // v2.0 migration: clear old username-based auth so everyone signs in with Google
   const authVersion = localStorage.getItem('fourdle-auth-version');
@@ -1850,6 +1907,7 @@ init();
     localStorage.setItem('fourdle-auth-version', '2.0');
   }
   tryRestoreUsername();
+  runDataMigration();
 
   // Wait for Firebase auth to restore session before allowing score submission
   // This prevents the race condition where puzzle completes before auth is ready
