@@ -1578,7 +1578,7 @@ init();
           email: user.email,
           played: 0, wins: 0, streak: 0, best: 0,
           totalGuesses: 0, lastPuzzle: 0,
-          monthPoints: {},
+          monthPoints: {}, daily: {},
           createdAt: Date.now()
         });
       } else {
@@ -1626,7 +1626,7 @@ init();
         uid: currentUser.uid,
         played: 0, wins: 0, streak: 0, best: 0,
         totalGuesses: 0, lastPuzzle: 0,
-        monthPoints: {},
+        monthPoints: {}, daily: {},
         createdAt: Date.now()
       });
     }
@@ -1658,6 +1658,10 @@ init();
     const monthPoints = data.monthPoints || {};
     monthPoints[monthKey] = (monthPoints[monthKey] || 0) + pointsEarned;
 
+    // Daily score log: puzzle number -> guess count (1-6), or 'X' for a played loss
+    const daily = data.daily || {};
+    daily[pn] = won ? (guessCount || 'X') : 'X';
+
     await setDoc(ref, {
       username,
       played:       (data.played || 0) + 1,
@@ -1667,8 +1671,9 @@ init();
       totalGuesses: (data.totalGuesses || 0) + (window._lastGuessCount || 0),
       lastPuzzle:   pn,
       monthPoints,
+      daily,
       updatedAt:    Date.now()
-    });
+    }, { merge: true });
   };
 
   // ── LEADERBOARD DISPLAY ──
@@ -1806,22 +1811,60 @@ init();
       html += '<th>#</th><th>Player</th><th style="text-align:center">Points</th><th style="text-align:center">Wins</th><th style="text-align:center">Played</th>';
       html += '</tr></thead><tbody>';
 
+      // Puzzle number -> short date label (epoch: puzzle #1 = 9 Jun 2026)
+      const puzzleDate = (n) => {
+        const d = new Date(2026, 5, 9);
+        d.setDate(d.getDate() + (n - 1));
+        return d.toLocaleString('en', { day: 'numeric', month: 'short' });
+      };
+      const POINTS_FOR = { 1:25, 2:20, 3:15, 4:10, 5:5, 6:2 };
+
       ranked.forEach((p, i) => {
         const rankClass = i === 0 ? 'gold' : i === 1 ? 'silver' : i === 2 ? 'bronze' : '';
         const rankLabel = i < 3 ? rankEmojis[i] : `${i+1}`;
         const isMe = p.username === myName;
-        html += `<tr>
+        html += `<tr class="lb-row" data-idx="${i}" style="cursor:pointer">
           <td class="lb-rank ${rankClass}">${rankLabel}</td>
-          <td class="lb-name ${isMe ? 'me' : ''}">${p.username}${isMe ? ' ★' : ''}</td>
+          <td class="lb-name ${isMe ? 'me' : ''}">${p.username}${isMe ? ' ★' : ''} <span style="opacity:.4;font-size:.8em">▾</span></td>
           <td class="lb-stat" style="font-weight:700;color:var(--correct)">${p.pts}</td>
           <td class="lb-stat">${p.wins || 0}</td>
           <td class="lb-stat">${p.played || 0}</td>
         </tr>`;
+
+        // Expandable daily log row
+        const daily = p.daily || {};
+        const days = Object.keys(daily).map(Number).sort((a,b) => a-b);
+        let logInner;
+        if (days.length === 0) {
+          logInner = '<div style="opacity:.6;font-size:.85em;padding:4px 2px">No daily log recorded yet.</div>';
+        } else {
+          logInner = '<div style="display:flex;flex-wrap:wrap;gap:6px;padding:4px 2px">' +
+            days.map(n => {
+              const v = daily[n];
+              const solved = v !== 'X' && v != null;
+              const pts = solved ? (POINTS_FOR[v] || 0) : 0;
+              const bg = solved ? 'var(--correct)' : 'var(--absent)';
+              return `<span style="display:inline-flex;flex-direction:column;align-items:center;min-width:52px;padding:4px 6px;border-radius:8px;background:${bg};color:#fff">
+                <span style="font-size:.7em;opacity:.85">${puzzleDate(n)}</span>
+                <span style="font-weight:700">${solved ? v + '/6' : 'X'}</span>
+                <span style="font-size:.65em;opacity:.85">${pts}pt</span>
+              </span>`;
+            }).join('') + '</div>';
+        }
+        html += `<tr class="lb-log" data-log="${i}" style="display:none"><td colspan="5" style="padding:2px 8px 10px">${logInner}</td></tr>`;
       });
 
       html += '</tbody></table>';
       container.innerHTML = html;
-      meta.textContent = `${ranked.length} player${ranked.length !== 1 ? 's' : ''} in the tournament`;
+      meta.textContent = `${ranked.length} player${ranked.length !== 1 ? 's' : ''} in the tournament · tap a name for daily scores`;
+
+      // Toggle daily log rows
+      container.querySelectorAll('.lb-row').forEach(row => {
+        row.addEventListener('click', () => {
+          const logRow = container.querySelector(`.lb-log[data-log="${row.dataset.idx}"]`);
+          if (logRow) logRow.style.display = logRow.style.display === 'none' ? 'table-row' : 'none';
+        });
+      });
 
     } catch(e) {
       container.innerHTML = '<div class="lb-empty">Unable to load tournament. Check your connection.</div>';
@@ -1842,31 +1885,43 @@ init();
 
   // ── ONE-TIME DATA MIGRATION ──
   async function runDataMigration() {
-    if (localStorage.getItem('fourdle-migration-v3')) return;
+    if (localStorage.getItem('fourdle-migration-v4')) return;
 
-    // Correct scores as of puzzle 58 (Aug 5 2026)
-    // These are authoritative - overwrite whatever is in Firebase
+    // Authoritative scores through puzzle 62 (Sun 9 Aug 2026), rebuilt from
+    // the daily group-chat record. Only players with complete day-by-day data
+    // are included here. Niamh, Nuala and PJ are deliberately OMITTED so their
+    // live scores are left untouched (no verified data to overwrite them with).
+    // The 4 no-UID players (Jack, Leah, Darragh, Annalisa) can't be seeded
+    // until they sign in - see the v5 back-fill stub below.
+    // `daily` maps puzzle number -> guess count (1-6), or 'X' for a played loss.
     const DATA_FIX = {
-      '6xWpuZI9itScsYcmMPpJb1faL0C3': { username: 'AMY',    played: 2, wins: 1, streak: 0, best: 1, totalGuesses: 12, monthPoints: { 'aug2026': 5  }, lastPuzzle: 58 },
-      '8LgAC6UBmUVhivDIGXh9EKPQB3W2': { username: 'NUALA',  played: 1, wins: 1, streak: 1, best: 1, totalGuesses: 3,  monthPoints: { 'aug2026': 15 }, lastPuzzle: 58 },
-      '8oc8mrT557Tz8SOBM9j16ZLcoth2': { username: 'NIAMH',  played: 3, wins: 3, streak: 3, best: 3, totalGuesses: 13, monthPoints: { 'aug2026': 25 }, lastPuzzle: 58 },
-      'Gf2W7gphUbYr7N87nIHysYwKVcq2': { username: 'MARK',   played: 4, wins: 4, streak: 2, best: 2, totalGuesses: 21, monthPoints: { 'aug2026': 22 }, lastPuzzle: 58 },
-      'HgZip7EgqhMaKAihpfbVECKzp9I2': { username: 'ÉANNA', played: 4, wins: 4, streak: 4, best: 4, totalGuesses: 12, monthPoints: { 'aug2026': 60 }, lastPuzzle: 58 },
-      'LnlnalwA6aSqRR6veLcEXnNxfyq2': { username: 'NOIRIN', played: 3, wins: 3, streak: 3, best: 3, totalGuesses: 9,  monthPoints: { 'aug2026': 40 }, lastPuzzle: 58 },
-      'm8NEjBnIiuhT0q58twoG9DieZoS2': { username: 'FIONN',  played: 4, wins: 3, streak: 1, best: 2, totalGuesses: 22, monthPoints: { 'aug2026': 22 }, lastPuzzle: 58 },
-      'YzDiCh6JuMPpJNKhj1MMqQNlLJh1': { username: 'PJ',     played: 4, wins: 4, streak: 3, best: 4, totalGuesses: 17, monthPoints: { 'aug2026': 35 }, lastPuzzle: 58 },
-      'Z3OdjWxbCjOIMwRAqYSP1lvThNt1': { username: 'OISIN',  played: 3, wins: 3, streak: 2, best: 2, totalGuesses: 11, monthPoints: { 'aug2026': 35 }, lastPuzzle: 58 },
-      'ZmdN4TATW2W4J4wUjfiRfh73kVn2': { username: 'SONA',   played: 3, wins: 3, streak: 3, best: 3, totalGuesses: 11, monthPoints: { 'aug2026': 37 }, lastPuzzle: 58 },
-      'gvq6ISfG8oMsOmJ5MHDknij98iW2': { username: 'CONOR',  played: 4, wins: 3, streak: 1, best: 2, totalGuesses: 22, monthPoints: { 'aug2026': 14 }, lastPuzzle: 58 },
-      'nwXcFqHzrpggCdG4nGBKrnn4xcn1': { username: 'PETER',  played: 3, wins: 3, streak: 2, best: 2, totalGuesses: 13, monthPoints: { 'aug2026': 35 }, lastPuzzle: 58 },
+      'HgZip7EgqhMaKAihpfbVECKzp9I2': { username: 'ÉANNA',  played: 7, wins: 7, streak: 7, best: 7, totalGuesses: 24, monthPoints: { 'aug2026': 92 }, lastPuzzle: 62, daily: { 56:3, 57:3, 58:3, 59:2, 60:3, 61:4, 62:6 } },
+      'LnlnalwA6aSqRR6veLcEXnNxfyq2': { username: 'NOIRIN', played: 7, wins: 7, streak: 7, best: 7, totalGuesses: 29, monthPoints: { 'aug2026': 67 }, lastPuzzle: 62, daily: { 56:5, 57:5, 58:3, 59:3, 60:3, 61:6, 62:4 } },
+      'ZmdN4TATW2W4J4wUjfiRfh73kVn2': { username: 'SONA',   played: 7, wins: 7, streak: 7, best: 7, totalGuesses: 30, monthPoints: { 'aug2026': 62 }, lastPuzzle: 62, daily: { 56:5, 57:6, 58:3, 59:3, 60:4, 61:4, 62:5 } },
+      'nwXcFqHzrpggCdG4nGBKrnn4xcn1': { username: 'PETER',  played: 6, wins: 6, streak: 6, best: 6, totalGuesses: 24, monthPoints: { 'aug2026': 60 }, lastPuzzle: 61, daily: { 56:5, 57:4, 58:4, 59:3, 60:4, 61:4 } },
+      'Z3OdjWxbCjOIMwRAqYSP1lvThNt1': { username: 'OISIN',  played: 6, wins: 6, streak: 6, best: 6, totalGuesses: 26, monthPoints: { 'aug2026': 52 }, lastPuzzle: 62, daily: { 57:5, 58:3, 59:2, 60:5, 61:5, 62:6 } },
+      'm8NEjBnIiuhT0q58twoG9DieZoS2': { username: 'FIONN',  played: 6, wins: 5, streak: 5, best: 5, totalGuesses: 27, monthPoints: { 'aug2026': 47 }, lastPuzzle: 61, daily: { 56:'X', 57:6, 58:4, 59:3, 60:3, 61:5 } },
+      'gvq6ISfG8oMsOmJ5MHDknij98iW2': { username: 'CONOR',  played: 6, wins: 6, streak: 6, best: 6, totalGuesses: 29, monthPoints: { 'aug2026': 37 }, lastPuzzle: 61, daily: { 56:5, 57:5, 58:6, 59:3, 60:5, 61:5 } },
+      '6xWpuZI9itScsYcmMPpJb1faL0C3': { username: 'AMY',    played: 6, wins: 5, streak: 4, best: 4, totalGuesses: 31, monthPoints: { 'aug2026': 29 }, lastPuzzle: 62, daily: { 56:6, 58:'X', 59:4, 60:5, 61:4, 62:6 } },
+      'Gf2W7gphUbYr7N87nIHysYwKVcq2': { username: 'MARK',   played: 6, wins: 6, streak: 6, best: 6, totalGuesses: 31, monthPoints: { 'aug2026': 29 }, lastPuzzle: 61, daily: { 56:6, 57:5, 58:5, 59:5, 60:6, 61:4 } },
     };
+
+    // ── v5 BACK-FILL STUB (fill in once the 4 no-UID players sign in) ──
+    // When Jack / Leah / Darragh / Annalisa sign in with Google, grab their UID
+    // (Firebase console > Authentication, or console.log(currentUser.uid)),
+    // paste it below, move this into DATA_FIX, and bump the guard to v5.
+    // Computed totals through puzzle 62:
+    //   DARRAGH : played 7, wins 6, points 47, daily {56:'X',57:4,58:3,59:4,60:6,61:5,62:5}
+    //   LEAH    : played 4, wins 4, points 45, daily {58:3,59:4,60:3,62:5}
+    //   ANNALISA: played 5, wins 5, points 35, daily {56:5,57:4,58:4,60:5,61:5}
+    //   JACK    : played 6, wins 3, points 19, daily {56:'X',57:'X',58:6,59:3,60:6,61:'X'}
 
     try {
       await Promise.all(Object.entries(DATA_FIX).map(([uid, data]) =>
-        setDoc(doc(db, 'players', uid), { ...data, migratedAt: Date.now() })
+        setDoc(doc(db, 'players', uid), { ...data, uid, migratedAt: Date.now() }, { merge: true })
       ));
-      localStorage.setItem('fourdle-migration-v3', '1');
-      console.log('[Fourdle] Migration v3 complete');
+      localStorage.setItem('fourdle-migration-v4', '1');
+      console.log('[Fourdle] Migration v4 complete');
     } catch(e) {
       console.log('[Fourdle] Migration error:', e.message);
     }
